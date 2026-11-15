@@ -14,9 +14,11 @@ use std::path::{Path, PathBuf};
 
 pub const KEY_NPCLIENT: &str = r"Software\\NaturalPoint\\NATURALPOINT\\NPClient Location";
 pub const KEY_FREETRACK: &str = r"Software\\Freetrack\\FreeTrackClient";
-/// Clé lue par les DLL (nom hérité de MousePods, que les DLL attendent).
-pub const KEY_BRIDGE: &str = r"Software\\MousePods";
-pub const KEY_TABLE: &str = r"Software\\MousePods\\Table";
+/// Clés lues par les DLL de podtrack (fichier de pose, journal, tables TrackIR).
+pub const KEY_BRIDGE: &str = r"Software\\podtrack";
+pub const KEY_TABLE: &str = r"Software\\podtrack\\Table";
+/// Clés de MousePods, retirées au passage lors d'une désinstallation.
+pub const LEGACY_KEYS: [&str; 2] = [r"Software\\MousePods", r"Software\\MousePods\\Table"];
 pub const DLLS: [&str; 4] = ["NPClient.dll", "NPClient64.dll", "freetrackclient.dll", "freetrackclient64.dll"];
 
 /// Traqueurs connus, reconnus au chemin de leur DLL.
@@ -243,7 +245,7 @@ impl Prefix {
         }
         let before = read_reg(&backup)?;
         let mut text = read_reg(&self.user_reg())?;
-        for key in [KEY_NPCLIENT, KEY_FREETRACK, KEY_BRIDGE, KEY_TABLE] {
+        for key in [KEY_NPCLIENT, KEY_FREETRACK, KEY_BRIDGE, KEY_TABLE, LEGACY_KEYS[0], LEGACY_KEYS[1]] {
             let is_path_key = key == KEY_NPCLIENT || key == KEY_FREETRACK;
             if is_path_key {
                 if let Some(cur) = value(&text, key, "Path") {
@@ -317,7 +319,7 @@ mod tests {
         let text = read_reg(&p.user_reg()).unwrap();
         assert_eq!(value(&text, KEY_NPCLIENT, "Path").unwrap(), "Z:/home/x/.local/share/opentrack-launcher/install/modules/");
         assert!(value(&text, KEY_FREETRACK, "Path").is_none());
-        assert!(!text.contains("MousePods"));
+        assert!(!text.contains("MousePods") && !text.contains("podtrack"));
         assert_eq!(value(&text, r"Software\\Wine", "Version").unwrap(), "win10");
         assert!(!p.dll_dir().exists());
     }

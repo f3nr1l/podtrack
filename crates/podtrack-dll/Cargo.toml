@@ -1,0 +1,20 @@
+# DLL TrackIR (NPClient) et FreeTrack (freetrackclient) pour les jeux sous Wine / Proton.
+# Hors du workspace : se compile seulement pour Windows, voir build.sh.
+[package]
+name = "podtrack-dll"
+description = "DLL TrackIR / FreeTrack de podtrack : lisent la pose dans un fichier Linux (lecteur Z: de Wine)"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
+codegen-units = 1
+strip = true
+
+[workspace]

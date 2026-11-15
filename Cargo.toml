@@ -2,6 +2,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*"]
+# DLL Windows : compilées à part (crates/podtrack-dll/build.sh)
+exclude = ["crates/podtrack-dll"]
 
 [workspace.package]
 version = "0.1.0"
