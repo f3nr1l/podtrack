@@ -84,7 +84,8 @@ mod tests {
     use super::*;
 
     #[test]
-    fn star_citizen_table() {
+    fn enhanced_game_table() {
+        // jeu « TrackIR Enhanced » de la liste, pris comme vecteur de contrôle
         let games = parse(BUNDLED_CSV);
         let sc = games.iter().find(|g| g.name == "Star Citizen").unwrap();
         assert_eq!(sc.id, 3450);

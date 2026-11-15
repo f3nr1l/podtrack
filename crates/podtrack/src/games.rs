@@ -34,7 +34,7 @@ pub fn game_running(s: &State, id: &str) -> Result<bool> {
 pub fn set_tracker(s: &mut State, id: &str, tracker: &str) -> Result<String> {
     let choice = match tracker {
         "podtrack" | "airpods" => TrackerChoice::Podtrack,
-        "other" | "beam" | "none" => TrackerChoice::Other,
+        "other" | "none" => TrackerChoice::Other,
         t => bail!("traqueur inconnu : {t} (podtrack ou other)"),
     };
     let game = s.cfg.games.get(id).cloned().with_context(|| format!("jeu inconnu : {id}"))?;
@@ -48,7 +48,7 @@ pub fn set_tracker(s: &mut State, id: &str, tracker: &str) -> Result<String> {
     };
     if !already {
         if game_running(s, id)? {
-            bail!("{} tourne encore (ou son wineserver) : ferme-le, attends quelques secondes, recommence", game.name);
+            bail!("{} est encore lancé (ou son wineserver) : fermer le jeu, attendre quelques secondes, puis recommencer", game.name);
         }
         let snap = pfx.snapshot()?;
         log::info!("sauvegarde du registre : {}", snap.display());

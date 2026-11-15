@@ -76,7 +76,7 @@ pub fn run(cfg: &mut Config, path: &Path, map: &[(String, String)]) -> Result<Ve
                         game.profile = profile;
                         done.push(format!("profil de jeu {appid} → {id}"));
                     }
-                    None => done.push(format!("jeu {id} absent de la configuration : ajoute-le d'abord")),
+                    None => done.push(format!("jeu {id} absent de la configuration : l'ajouter d'abord")),
                 }
                 continue;
             }

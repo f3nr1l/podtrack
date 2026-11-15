@@ -7,7 +7,7 @@ use std::process::Command;
 
 const SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys";
 const BASE: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/";
-/// Anciens raccourcis (MousePods, sc-headtracker) remplacés par ceux de podtrack.
+/// Anciens raccourcis de MousePods, remplacés par ceux de podtrack.
 const LEGACY: [&str; 1] = ["airpods-mouse-recenter"];
 
 fn gs(args: &[&str]) -> Result<String> {

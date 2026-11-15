@@ -305,11 +305,11 @@ mod tests {
         assert_eq!(p.status().unwrap(), Status::Foreign("opentrack".into()));
         let mut t = TrackTable::default();
         t.entries.push((3450, [0x34, 0x4e, 0xce, 0xf4, 0xa2, 0xb4, 0xc6, 0x3e]));
-        p.install(&src, Path::new("/dev/shm/podtrack-1000/pose-sc"), &t, false).unwrap();
+        p.install(&src, Path::new("/dev/shm/podtrack-1000/pose-jeu"), &t, false).unwrap();
         assert_eq!(p.status().unwrap(), Status::On);
         let text = read_reg(&p.user_reg()).unwrap();
         assert_eq!(value(&text, KEY_FREETRACK, "Path").unwrap(), "C:\\\\podtrack\\\\");
-        assert_eq!(value(&text, KEY_BRIDGE, "PoseFile").unwrap(), "Z:\\\\dev\\\\shm\\\\podtrack-1000\\\\pose-sc");
+        assert_eq!(value(&text, KEY_BRIDGE, "PoseFile").unwrap(), "Z:\\\\dev\\\\shm\\\\podtrack-1000\\\\pose-jeu");
         assert!(text.contains("\"3450\"=hex:34,4e,ce,f4,a2,b4,c6,3e"));
         // une seconde installation garde la sauvegarde d'origine
         p.install(&src, Path::new("/dev/shm/x"), &t, true).unwrap();

@@ -277,7 +277,7 @@ fn status_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
     glib::timeout_add_local(Duration::from_millis(50), move || {
         let v = sh.borrow().status.clone();
         if v.is_null() {
-            conn.set_subtitle("démon arrêté — lance « podtrack daemon » ou le service podtrack");
+            conn.set_subtitle("démon arrêté : lancer le service podtrack (ou « podtrack daemon »)");
             *head_state.borrow_mut() = ([0.0; 3], None, false);
             area.queue_draw();
             return glib::ControlFlow::Continue;
@@ -477,7 +477,7 @@ fn slug(name: &str) -> String {
 fn add_games_group(sh: &Sh, overlay: &adw::ToastOverlay, cfg: &Config) -> adw::PreferencesGroup {
     let g = adw::PreferencesGroup::builder()
         .title("Ajouter un jeu")
-        .description("Jeu Steam sous Proton, ou préfixe Wine hors Steam (lug-helper, Lutris…). Rouvre la fenêtre pour voir le jeu ajouté.")
+        .description("Jeu Steam sous Proton, ou préfixe Wine hors Steam (Lutris, Heroic, installation manuelle…). Le jeu ajouté apparaît à la réouverture de la fenêtre.")
         .build();
     let steam: Vec<crate::steam::SteamGame> = crate::steam::installed(&cfg.steam)
         .into_values()
@@ -501,7 +501,7 @@ fn add_games_group(sh: &Sh, overlay: &adw::ToastOverlay, cfg: &Config) -> adw::P
                 Ok(())
             });
             match res {
-                Ok(()) => toast(&o, &format!("{name} ajouté : active « Suivi par les AirPods » après avoir rouvert la fenêtre")),
+                Ok(()) => toast(&o, &format!("{name} ajouté ; activer « Suivi par les AirPods » à la réouverture de la fenêtre")),
                 Err(e) => toast(&o, &format!("{e:#}")),
             }
         });
@@ -535,7 +535,7 @@ fn add_games_group(sh: &Sh, overlay: &adw::ToastOverlay, cfg: &Config) -> adw::P
                     Ok(())
                 });
                 match res {
-                    Ok(()) => toast(&o, "Préfixe ajouté : rouvre la fenêtre pour l'activer"),
+                    Ok(()) => toast(&o, "Préfixe ajouté ; il apparaît à la réouverture de la fenêtre"),
                     Err(e) => toast(&o, &format!("{e:#}")),
                 }
             });
@@ -556,7 +556,7 @@ fn games_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
         let g = adw::PreferencesGroup::builder().title(&game.name).description(&where_).build();
         let sw = adw::SwitchRow::builder()
             .title("Suivi par les AirPods")
-            .subtitle("désactivé : les clés du traqueur d'origine (Beam…) sont rendues ; jeu fermé")
+            .subtitle("désactivé : le traqueur installé auparavant retrouve ses clés ; jeu fermé")
             .active(game.enabled && game.tracker == TrackerChoice::Podtrack)
             .build();
         {
@@ -592,7 +592,7 @@ fn games_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
                 }
                 let id2 = id.clone();
                 match edit_cfg(&sh, move |c| { c.games.remove(&id2); Ok(()) }) {
-                    Ok(()) => toast(&o, &format!("{name} retiré (rouvre la fenêtre)")),
+                    Ok(()) => toast(&o, &format!("{name} retiré de la liste")),
                     Err(e) => toast(&o, &format!("{e:#}")),
                 }
             });
@@ -611,17 +611,6 @@ fn games_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
 }
 
 // ----------------------------------------------------------------------------------- Calibration
-
-fn step_text(step: &str) -> &'static str {
-    match step {
-        "still" => "Regarde l'écran et ne bouge plus",
-        "yaw" => "Tourne la tête vers la GAUCHE",
-        "back" => "Reviens en face de l'écran et ne bouge plus",
-        "pitch" => "Lève la tête vers le HAUT",
-        "roll" => "Penche la tête vers l'épaule DROITE",
-        _ => "",
-    }
-}
 
 /// Fenêtres plein écran de la calibration par points, une par moniteur choisi.
 struct PointWindows {
@@ -682,10 +671,10 @@ fn open_point_windows(chosen: &[gdk::Monitor], main: usize, inset: f64, fullscre
             if here {
                 let x = w * (0.5 + sx as f64 * (0.5 - inset));
                 let y = h * (0.5 - sy as f64 * (0.5 - inset));
-                cr.set_source_rgba(0.0, 0.0, 0.0, 0.45);
+                cr.set_source_rgba(0.16, 0.16, 0.18, 0.75);
                 cr.arc(x, y, 40.0, 0.0, std::f64::consts::TAU);
                 let _ = cr.fill();
-                cr.set_source_rgba(1.0, 1.0, 1.0, 0.95);
+                cr.set_source_rgba(0.93, 0.93, 0.90, 0.95);
                 cr.set_line_width(3.0);
                 cr.arc(x, y, 26.0, 0.0, std::f64::consts::TAU);
                 let _ = cr.stroke();
@@ -697,21 +686,29 @@ fn open_point_windows(chosen: &[gdk::Monitor], main: usize, inset: f64, fullscre
                 let _ = cr.stroke();
             }
             if is_main {
-                let text = crate::point_text(&point);
+                let text = crate::texts::point(&point);
                 let line = if hint.is_empty() { text.to_string() } else { format!("{text} — {hint}") };
                 cr.select_font_face("Sans", gtk::cairo::FontSlant::Normal, gtk::cairo::FontWeight::Bold);
                 cr.set_font_size(24.0);
                 if let Ok(ext) = cr.text_extents(&line) {
                     let (tx, ty) = (w / 2.0 - ext.width() / 2.0, h * 0.5 + 90.0);
-                    cr.set_source_rgba(0.0, 0.0, 0.0, 0.6);
-                    cr.rectangle(tx - 20.0, ty - 34.0, ext.width() + 40.0, 72.0);
+                    // pastille aux coins arrondis, gris foncé, texte blanc cassé
+                    let (px, py, pw, ph, r) = (tx - 24.0, ty - 36.0, ext.width() + 48.0, 76.0, 18.0);
+                    cr.new_sub_path();
+                    cr.arc(px + pw - r, py + r, r, -std::f64::consts::FRAC_PI_2, 0.0);
+                    cr.arc(px + pw - r, py + ph - r, r, 0.0, std::f64::consts::FRAC_PI_2);
+                    cr.arc(px + r, py + ph - r, r, std::f64::consts::FRAC_PI_2, std::f64::consts::PI);
+                    cr.arc(px + r, py + r, r, std::f64::consts::PI, 1.5 * std::f64::consts::PI);
+                    cr.close_path();
+                    cr.set_source_rgba(0.16, 0.16, 0.18, 0.88);
                     let _ = cr.fill();
-                    cr.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+                    cr.set_source_rgba(0.93, 0.93, 0.90, 1.0);
                     cr.move_to(tx, ty);
                     let _ = cr.show_text(&line);
                     cr.set_font_size(14.0);
+                    cr.set_source_rgba(0.80, 0.80, 0.78, 1.0);
                     cr.move_to(tx, ty + 24.0);
-                    let _ = cr.show_text("tiens la position deux secondes · Échap pour annuler");
+                    let _ = cr.show_text("tenir la position deux secondes · Échap pour annuler");
                 }
             }
         });
@@ -795,7 +792,7 @@ fn calib_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
                     toast(&o, "Profil d'axes enregistré");
                 } else {
                     let i = st["index"].as_u64().unwrap_or(0);
-                    label.set_label(&format!("Étape {}/7 — {}", i + 1, step_text(st["step"].as_str().unwrap_or(""))));
+                    label.set_label(&format!("Étape {}/7 — {}", i + 1, crate::texts::step(st["step"].as_str().unwrap_or(""))));
                     bar.set_fraction(f(&st["progress"]));
                 }
             }
@@ -806,12 +803,12 @@ fn calib_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
     // amplitude par points
     let g2 = adw::PreferencesGroup::builder()
         .title("Amplitude par points à l'écran")
-        .description("Des cercles s'affichent par-dessus l'écran, un à la fois : centre, puis les quatre coins. Regarde chacun et tiens la position deux secondes. L'angle de ta tête vers chaque coin devient l'amplitude : là, la caméra (ou le curseur) atteint son maximum.")
+        .description("Des cercles s'affichent par-dessus l'écran, un à la fois : le centre, puis les quatre coins. Regarder chacun en tenant la position deux secondes. L'angle de la tête vers chaque coin devient l'amplitude : à ce point, la caméra (ou le curseur) atteint son maximum.")
         .build();
     let cfg = config::load(&sh.borrow().cfg_path).unwrap_or_default();
     let mut targets: Vec<(String, String)> = vec![
         ("baseline".into(), "Référence (jeux sans réglage propre)".into()),
-        ("mouse".into(), "Souris en mode pointeur".into()),
+        ("mouse".into(), "Pointage par la tête, mode absolu".into()),
     ];
     targets.extend(cfg.games.iter().map(|(id, g)| (id.clone(), g.name.clone())));
     let model = gtk::StringList::new(&targets.iter().map(|t| t.1.as_str()).collect::<Vec<_>>());
@@ -891,7 +888,7 @@ fn calib_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
                         }
                     } else {
                         let _ = dbus::call::<()>("GameCalibrationCancel", &());
-                        toast(&o, &format!("Calibration {end} {}", s["hint"].as_str().unwrap_or("")));
+                        toast(&o, &format!("Calibration {} {}", if end == "cancelled" { "annulée" } else { "échouée" }, crate::texts::hint(s["hint"].as_str().unwrap_or(""))));
                     }
                     close_all();
                     return glib::ControlFlow::Break;
@@ -900,11 +897,7 @@ fn calib_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
                     close_all();
                     return glib::ControlFlow::Break;
                 }
-                let hint = match s["hint"].as_str() {
-                    Some("too_close") => "trop près du centre, va plus loin",
-                    Some("wrong_side") => "mauvais côté",
-                    _ => "",
-                };
+                let hint = crate::texts::hint(s["hint"].as_str().unwrap_or(""));
                 if let Some(pw) = active.borrow().as_ref() {
                     *pw.state.borrow_mut() = (s["point"].as_str().unwrap_or("").to_string(), f(&s["progress"]), hint.to_string());
                     for (_, a) in &pw.wins {
@@ -964,11 +957,11 @@ fn outputs_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
 
     // souris par la tête
     let gm = adw::PreferencesGroup::builder()
-        .title("Souris par la tête")
-        .description("Mode souris : la vitesse de la tête déplace le curseur. Mode pointeur : la direction visée donne la position. En pause automatiquement pendant un jeu suivi (réglable dans Avancé).")
+        .title("Pointage par la tête")
+        .description("Le curseur suit la tête. En pause automatiquement pendant un jeu suivi (réglable dans Avancé).")
         .build();
     let mon = adw::SwitchRow::builder().title("Activer").active(cfg.mouse.enabled).build();
-    let modes = gtk::StringList::new(&["Souris (relatif)", "Pointeur (absolu)"]);
+    let modes = gtk::StringList::new(&["Relatif : la vitesse de la tête déplace le curseur", "Absolu : la direction visée donne la position"]);
     let mode = adw::ComboRow::builder().title("Mode").model(&modes).selected(if cfg.mouse.mode == podtrack_core::mouse::Mode::Pointeur { 1 } else { 0 }).build();
     let sx = spin("Sensibilité horizontale", "", 0.1, 10.0, 0.1, 2, cfg.mouse.sensitivity_x);
     let sy = spin("Sensibilité verticale", "", 0.1, 10.0, 0.1, 2, cfg.mouse.sensitivity_y);
@@ -1001,7 +994,7 @@ fn outputs_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
     // manette virtuelle
     let gj = adw::PreferencesGroup::builder()
         .title("Manette virtuelle")
-        .description("Pour les jeux Linux natifs qui lient la caméra à des axes de manette (Euro Truck Simulator 2, War Thunder…) : lacet, tangage et roulis sur RX, RY et RZ. Attention : comme toute manette ajoutée, elle peut décaler la numérotation des manettes dans un jeu (Star Citizen…).")
+        .description("Pour les jeux Linux natifs qui lient la caméra à des axes de manette : lacet, tangage et roulis sur RX, RY et RZ. Comme toute manette ajoutée, elle peut décaler la numérotation des manettes dans certains jeux.")
         .build();
     let jon = adw::SwitchRow::builder().title("Activer").active(cfg.joystick.enabled).build();
     gj.add(&jon);
@@ -1010,7 +1003,7 @@ fn outputs_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
         let (sh, o) = (sh.clone(), overlay.clone());
         jon.connect_active_notify(move |r| { let v = r.is_active(); if let Err(e) = edit_cfg(&sh, move |c| { c.joystick.enabled = v; Ok(()) }) { toast(&o, &format!("{e:#}")) } });
     }
-    page.add(&reset_button(sh, overlay, "opentrack, la souris et la manette", |c| {
+    page.add(&reset_button(sh, overlay, "opentrack, le pointage par la tête et la manette", |c| {
         c.opentrack = Default::default();
         c.mouse = Default::default();
         c.joystick = Default::default();
@@ -1054,7 +1047,7 @@ fn draw_mouse_curve(cr: &gtk::cairo::Context, w: f64, h: f64, c: &podtrack_core:
 
 fn mouse_response_group(sh: &Sh, overlay: &adw::ToastOverlay, c0: &podtrack_core::mouse::SourisConfig) -> adw::PreferencesGroup {
     let g = adw::PreferencesGroup::builder()
-        .title("Souris — réponse")
+        .title("Pointage par la tête — réponse")
         .description("Graphe : vitesse de la tête (°/s, en abscisse jusqu'à 120) → vitesse du curseur. Ligne grise : réponse linéaire sans accélération. Point orange : mouvement en cours.")
         .build();
     let cur = Rc::new(RefCell::new(c0.clone()));
@@ -1151,7 +1144,7 @@ fn hotkeys_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
     let cfg = config::load(&sh.borrow().cfg_path).unwrap_or_default();
     let g = adw::PreferencesGroup::builder()
         .title("Raccourcis globaux")
-        .description("Enregistrés comme raccourcis personnalisés de GNOME : ils marchent même en jeu, mais la touche n'arrive plus au jeu. Choisis une combinaison que le jeu n'utilise pas.")
+        .description("Enregistrés comme raccourcis personnalisés de GNOME : ils fonctionnent aussi en jeu, mais la touche n'arrive plus au jeu. Choisir une combinaison que les jeux n'utilisent pas.")
         .build();
     for (key, title, value) in [("recenter", "Recentrer", cfg.hotkeys.recenter.clone()), ("toggle", "Démarrer / arrêter", cfg.hotkeys.toggle.clone())] {
         let row = adw::ActionRow::builder().title(title).use_markup(false).build();
@@ -1189,7 +1182,7 @@ fn hotkeys_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
             clear.connect_clicked(move |_| apply(String::new()));
         }
         set.connect_clicked(move |b| {
-            let dlg = adw::AlertDialog::builder().heading("Nouveau raccourci").body("Appuie sur la combinaison voulue (Échap pour annuler).").build();
+            let dlg = adw::AlertDialog::builder().heading("Nouveau raccourci").body("Appuyer sur la combinaison voulue (Échap pour annuler).").build();
             dlg.add_response("cancel", "Annuler");
             let keys = gtk::EventControllerKey::new();
             let apply = apply.clone();
@@ -1292,7 +1285,7 @@ fn label_for(path: &str) -> Option<&'static str> {
 }
 
 const ADVANCED: [(&str, &str); 11] = [
-    ("mouse", "Souris par la tête"),
+    ("mouse", "Pointage par la tête"),
     ("joystick", "Manette virtuelle"),
     ("bluetooth", "Bluetooth"),
     ("engine", "Moteur de mouvement"),

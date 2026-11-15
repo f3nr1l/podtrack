@@ -186,7 +186,7 @@ impl Tray for PodTray {
         );
         m.push(
             CheckmarkItem {
-                label: "Souris par la tête".into(),
+                label: "Pointage par la tête".into(),
                 checked: self.snap.mouse,
                 activate: Box::new(|t: &mut Self| {
                     t.hub.lock().command("toggle_mouse");

@@ -19,14 +19,14 @@ pub enum TrackerChoice {
     /// podtrack fournit le suivi de tête du jeu.
     #[default]
     Podtrack,
-    /// Un autre traqueur (Beam, opentrack…) : podtrack rend les clés d'origine.
+    /// Un autre traqueur (celui installé avant podtrack) : podtrack rend les clés d'origine.
     Other,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum GameKind {
-    /// Préfixe Wine hors Steam (Star Citizen par lug-helper, Lutris…).
+    /// Préfixe Wine hors Steam (Lutris, Heroic, installation manuelle…).
     Wine { prefix: PathBuf },
     /// Jeu Steam sous Proton.
     Steam { appid: String, #[serde(default)] flatpak: bool },
@@ -162,14 +162,14 @@ impl Default for PlaceConfig {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Hotkeys {
-    /// Raccourcis (format GNOME, ex. `<Super>AudioMute`), vides = aucun.
+    /// Raccourcis (format GNOME, ex. `<Super>XF86AudioMute`), vides = aucun.
     pub recenter: String,
     pub toggle: String,
 }
 
 impl Default for Hotkeys {
     fn default() -> Self {
-        Self { recenter: "<Super>XF86AudioMute".into(), toggle: String::new() }
+        Self { recenter: String::new(), toggle: String::new() }
     }
 }
 

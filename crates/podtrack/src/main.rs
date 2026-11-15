@@ -10,6 +10,7 @@ mod hub;
 mod import;
 mod signals;
 mod steam;
+mod texts;
 mod tray;
 
 use anyhow::{Context, Result, bail};
@@ -58,7 +59,7 @@ enum Cmd {
     Toggle,
     /// Arrête le démon.
     Quit,
-    /// Choisit le traqueur d'un jeu : podtrack, ou other (Beam, opentrack…). Jeu fermé.
+    /// Choisit le traqueur d'un jeu : podtrack, ou other (le traqueur installé auparavant). Jeu fermé.
     Tracker { game: String, tracker: String },
     /// Gère la liste des jeux.
     Game {
@@ -74,7 +75,7 @@ enum Cmd {
     ImportMousepods {
         /// config.json de MousePods.
         path: PathBuf,
-        /// Correspondance d'identifiant, ex. 900000001=star-citizen (répétable).
+        /// Correspondance d'identifiant MousePods → podtrack, ex. 900000001=mon-jeu (répétable).
         #[arg(long = "map")]
         map: Vec<String>,
     },
@@ -89,7 +90,7 @@ enum Cmd {
 enum GameCmd {
     /// Liste les jeux configurés.
     List,
-    /// Ajoute un jeu Wine hors Steam (préfixe), ex. Star Citizen par lug-helper.
+    /// Ajoute un jeu Wine hors Steam, par son préfixe (Lutris, Heroic, installation manuelle…).
     AddWine { id: String, name: String, prefix: PathBuf },
     /// Ajoute un jeu Steam (appid ; --flatpak pour Steam en Flatpak).
     AddSteam {
@@ -98,7 +99,7 @@ enum GameCmd {
         #[arg(long)]
         flatpak: bool,
     },
-    /// Retire un jeu de la configuration (rend d'abord la main avec `tracker <jeu> other`).
+    /// Retire un jeu de la configuration (rendre d'abord la main avec `tracker <jeu> other`).
     Remove { id: String },
     /// Jeux Steam installés.
     Steam,
@@ -171,32 +172,6 @@ fn print_status(v: &serde_json::Value) {
     }
 }
 
-fn step_text(step: &str) -> &'static str {
-    match step {
-        "still" => "Regarde l'écran et ne bouge plus",
-        "yaw" => "Tourne la tête vers la GAUCHE",
-        "back" => "Reviens en face de l'écran et ne bouge plus",
-        "pitch" => "Lève la tête vers le HAUT",
-        "roll" => "Penche la tête vers l'épaule DROITE",
-        _ => "",
-    }
-}
-
-pub fn point_text(p: &str) -> &'static str {
-    match p {
-        "center" => "Regarde le CENTRE de l'écran et tiens la position",
-        "left" => "Regarde le bord GAUCHE de l'écran",
-        "right" => "Regarde le bord DROIT de l'écran",
-        "top" => "Regarde le HAUT de l'écran",
-        "bottom" => "Regarde le BAS de l'écran",
-        "top_left" => "Regarde le coin EN HAUT À GAUCHE",
-        "top_right" => "Regarde le coin EN HAUT À DROITE",
-        "bottom_left" => "Regarde le coin EN BAS À GAUCHE",
-        "bottom_right" => "Regarde le coin EN BAS À DROITE",
-        _ => "",
-    }
-}
-
 fn calibrate_device() -> Result<()> {
     dbus::call::<()>("DeviceCalibrationStart", &())?;
     let mut last = String::new();
@@ -211,7 +186,7 @@ fn calibrate_device() -> Result<()> {
         let step = v["step"].as_str().unwrap_or("").to_string();
         let key = format!("{}{step}", v["index"]);
         if key != last {
-            println!("\nÉtape {}/7 : {}", v["index"].as_u64().unwrap_or(0) + 1, step_text(&step));
+            println!("\nÉtape {}/7 : {}", v["index"].as_u64().unwrap_or(0) + 1, texts::step(&step));
             last = key;
         }
         let pct = (v["progress"].as_f64().unwrap_or(0.0) * 30.0) as usize;
@@ -236,17 +211,13 @@ fn calibrate_game(target: &str, side: f64, vert: f64) -> Result<()> {
                 return Ok(());
             }
             dbus::call::<()>("GameCalibrationCancel", &())?;
-            bail!("calibration {end} ({})", st["hint"].as_str().unwrap_or(""));
+            bail!("calibration {} ({})", if end == "cancelled" { "annulée" } else { "échouée" }, texts::hint(st["hint"].as_str().unwrap_or("")));
         }
         let point = st["point"].as_str().unwrap_or("").to_string();
-        let hint = st["hint"].as_str().map(|h| match h {
-            "too_close" => " — trop près du centre, va plus loin",
-            "wrong_side" => " — mauvais côté",
-            _ => "",
-        }).unwrap_or("");
+        let hint = st["hint"].as_str().map(|h| format!(" — {}", texts::hint(h))).unwrap_or_default();
         let key = format!("{point}{hint}");
         if key != last {
-            println!("\n{}{hint}", point_text(&point));
+            println!("\n{}{hint}", texts::point(&point));
             last = key;
         }
         let pct = (st["progress"].as_f64().unwrap_or(0.0) * 30.0) as usize;
@@ -337,7 +308,7 @@ fn main() -> Result<()> {
                     c.games.insert(id.clone(), Game { name, kind: GameKind::Wine { prefix }, enabled: false, tracker: Default::default(), profile: Default::default() });
                     Ok(())
                 })?;
-                println!("jeu {id} ajouté ; active-le avec : podtrack tracker {id} podtrack");
+                println!("Jeu {id} ajouté. Activation : podtrack tracker {id} podtrack");
             }
             GameCmd::AddSteam { id, appid, flatpak } => {
                 valid_id(&id)?;
@@ -347,7 +318,7 @@ fn main() -> Result<()> {
                     c.games.insert(id.clone(), Game { name, kind: GameKind::Steam { appid, flatpak }, enabled: false, tracker: Default::default(), profile: Default::default() });
                     Ok(())
                 })?;
-                println!("jeu {id} ajouté ; active-le avec : podtrack tracker {id} podtrack");
+                println!("Jeu {id} ajouté. Activation : podtrack tracker {id} podtrack");
             }
             GameCmd::Remove { id } => {
                 config::update(&cfg_path, |c| {

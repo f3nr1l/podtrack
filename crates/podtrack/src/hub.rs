@@ -258,7 +258,7 @@ impl State {
         let prof = self.cfg.devices.get(&key).cloned();
         if self.profile_key.as_deref() != Some(key.as_str()) || prof.as_ref() != Some(self.engine.profile()) {
             if prof.is_none() {
-                log::warn!("profil {key} non calibré : axes par défaut (lance une calibration)");
+                log::warn!("profil {key} non calibré : axes par défaut (calibration conseillée)");
             }
             self.engine.set_profile(prof.unwrap_or_default());
             self.profile_key = Some(key);
