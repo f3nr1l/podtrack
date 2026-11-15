@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=podtrack
+Comment=Suivi de tête par AirPods (jeux, opentrack, souris)
+Exec=podtrack gui
+Icon=podtrack
+Categories=Utility;Game;
+Keywords=AirPods;head tracking;TrackIR;opentrack;suivi de tête;
+StartupNotify=true

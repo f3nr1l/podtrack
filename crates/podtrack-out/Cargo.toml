@@ -1,0 +1,12 @@
+[package]
+name = "podtrack-out"
+description = "Sorties de podtrack : fichier de pose, registre Wine, liste des jeux TrackIR, opentrack UDP"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+podtrack-core.workspace = true
+anyhow.workspace = true
+libc.workspace = true
+memmap2.workspace = true

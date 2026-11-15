@@ -1,0 +1,26 @@
+[package]
+name = "podtrack"
+description = "Suivi de tête par AirPods sous Linux : démon, ligne de commande, icône de barre, interface GNOME"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "podtrack"
+path = "src/main.rs"
+
+[dependencies]
+podtrack-core.workspace = true
+podtrack-bt = { path = "../podtrack-bt" }
+podtrack-out = { path = "../podtrack-out" }
+anyhow.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+toml.workspace = true
+log.workspace = true
+env_logger.workspace = true
+libc.workspace = true
+clap.workspace = true
+dirs.workspace = true
+zbus = { version = "5", default-features = false, features = ["blocking-api", "async-io"] }
+ksni = { version = "0.3", default-features = false, features = ["async-io", "blocking"] }
