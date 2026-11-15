@@ -24,6 +24,10 @@ struct Shared {
 type Sh = Rc<RefCell<Shared>>;
 
 fn status_now() -> Value {
+    // pas d'appel si le démon est arrêté : l'activation D-Bus le relancerait à chaque sondage
+    if !dbus::running() {
+        return Value::Null;
+    }
     dbus::call::<String>("Status", &()).ok().and_then(|s| serde_json::from_str(&s).ok()).unwrap_or(Value::Null)
 }
 
@@ -238,8 +242,18 @@ fn status_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
     let buttons = gtk::Box::builder().spacing(12).halign(gtk::Align::Center).margin_top(12).build();
     let recenter = gtk::Button::builder().label("Recentrer").css_classes(["pill", "suggested-action"]).build();
     let toggle = gtk::Button::builder().label("Arrêter").css_classes(["pill"]).build();
+    let start = gtk::Button::builder().label("Démarrer le service").css_classes(["pill", "suggested-action"]).visible(false).build();
     buttons.append(&recenter);
     buttons.append(&toggle);
+    buttons.append(&start);
+    {
+        let o = overlay.clone();
+        start.connect_clicked(move |_| {
+            if let Err(e) = dbus::start_daemon() {
+                toast(&o, &format!("{e:#}"));
+            }
+        });
+    }
     g0.add(&buttons);
     page.add(&g0);
     {
@@ -276,8 +290,12 @@ fn status_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
     let sh = sh.clone();
     glib::timeout_add_local(Duration::from_millis(50), move || {
         let v = sh.borrow().status.clone();
-        if v.is_null() {
-            conn.set_subtitle("démon arrêté : lancer le service podtrack (ou « podtrack daemon »)");
+        let down = v.is_null();
+        start.set_visible(down);
+        recenter.set_visible(!down);
+        toggle.set_visible(!down);
+        if down {
+            conn.set_subtitle("service arrêté");
             *head_state.borrow_mut() = ([0.0; 3], None, false);
             area.queue_draw();
             return glib::ControlFlow::Continue;

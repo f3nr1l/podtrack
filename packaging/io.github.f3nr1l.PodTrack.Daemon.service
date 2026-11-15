@@ -1,0 +1,5 @@
+# Activation D-Bus : un appel au démon (ligne de commande, raccourci) le démarre s'il est arrêté.
+[D-BUS Service]
+Name=io.github.f3nr1l.PodTrack.Daemon
+Exec=/usr/bin/podtrack daemon
+SystemdService=podtrack.service

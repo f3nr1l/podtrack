@@ -13,7 +13,7 @@ stage="$top/stage/podtrack-$version"
 rm -rf "$top"
 mkdir -p "$stage" "$top/SOURCES"
 cp target/release/podtrack README.md LICENSE NOTICE "$stage/"
-cp packaging/io.github.f3nr1l.PodTrack.desktop "$stage/"
+cp packaging/io.github.f3nr1l.PodTrack.desktop packaging/io.github.f3nr1l.PodTrack.Daemon.service "$stage/"
 cp crates/podtrack/data/icons/podtrack.svg "$stage/"
 # le paquet installe le binaire dans /usr/bin
 sed 's|%h/.local/bin/podtrack|/usr/bin/podtrack|' packaging/podtrack.service > "$stage/podtrack.service"

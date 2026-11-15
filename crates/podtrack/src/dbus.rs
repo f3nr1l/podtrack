@@ -139,6 +139,22 @@ pub fn serve(hub: Arc<Hub>) -> anyhow::Result<zbus::blocking::Connection> {
     Ok(conn)
 }
 
+/// Le démon est-il lancé ? (sans le démarrer par activation D-Bus)
+pub fn running() -> bool {
+    let Ok(conn) = zbus::blocking::Connection::session() else { return false };
+    let Ok(proxy) = zbus::blocking::fdo::DBusProxy::new(&conn) else { return false };
+    zbus::names::BusName::try_from(NAME).ok().and_then(|n| proxy.name_has_owner(n).ok()).unwrap_or(false)
+}
+
+/// Démarre le démon : service utilisateur systemd, à défaut processus détaché.
+pub fn start_daemon() -> anyhow::Result<()> {
+    let ok = std::process::Command::new("systemctl").args(["--user", "start", "podtrack.service"]).status().is_ok_and(|s| s.success());
+    if !ok {
+        std::process::Command::new(std::env::current_exe()?).arg("daemon").stdin(std::process::Stdio::null()).spawn()?;
+    }
+    Ok(())
+}
+
 /// Client : appelle une méthode du démon.
 pub fn call<R>(method: &str, body: &(impl serde::Serialize + zbus::zvariant::DynamicType)) -> anyhow::Result<R>
 where

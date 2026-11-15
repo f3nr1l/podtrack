@@ -29,6 +29,7 @@ install -Dm755 podtrack %{buildroot}%{_bindir}/podtrack
 install -Dm644 podtrack.service %{buildroot}%{_userunitdir}/podtrack.service
 install -Dm644 io.github.f3nr1l.PodTrack.desktop %{buildroot}%{_datadir}/applications/io.github.f3nr1l.PodTrack.desktop
 install -Dm644 podtrack.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/podtrack.svg
+install -Dm644 io.github.f3nr1l.PodTrack.Daemon.service %{buildroot}%{_datadir}/dbus-1/services/io.github.f3nr1l.PodTrack.Daemon.service
 
 %post
 %systemd_user_post podtrack.service
@@ -43,6 +44,7 @@ install -Dm644 podtrack.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/
 %{_userunitdir}/podtrack.service
 %{_datadir}/applications/io.github.f3nr1l.PodTrack.desktop
 %{_datadir}/icons/hicolor/scalable/apps/podtrack.svg
+%{_datadir}/dbus-1/services/io.github.f3nr1l.PodTrack.Daemon.service
 
 %changelog
 * Sun Nov 15 2026 René Onier <f3nr1l@icloud.com> - %{pt_version}-1
