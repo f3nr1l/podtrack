@@ -291,11 +291,13 @@ pub struct GameCalibConfig {
     pub no_signal_s: f64,
     /// Position des points à l'écran : marge depuis les bords (fraction de l'écran).
     pub inset: f64,
+    /// Calque en plein écran (GNOME peut alors le rendre opaque) ; sinon fenêtre maximisée.
+    pub overlay_fullscreen: bool,
 }
 
 impl Default for GameCalibConfig {
     fn default() -> Self {
-        Self { points: CORNERS.to_vec(), hold_s: 2.0, still_deg: 1.5, min_deg: 5.0, no_signal_s: 3.0, inset: 0.06 }
+        Self { points: CORNERS.to_vec(), hold_s: 2.0, still_deg: 1.5, min_deg: 5.0, no_signal_s: 3.0, inset: 0.06, overlay_fullscreen: false }
     }
 }
 

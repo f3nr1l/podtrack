@@ -50,7 +50,9 @@ thread_local! {
 /// `shot` : enregistre chaque page en PNG dans ce dossier puis quitte (vérification visuelle).
 pub fn run(shot: Option<PathBuf>) -> anyhow::Result<()> {
     SHOT_DIR.with(|d| *d.borrow_mut() = shot);
-    let app = adw::Application::builder().application_id(APP_ID).flags(gtk::gio::ApplicationFlags::NON_UNIQUE).build();
+    // une seule fenêtre ; la capture de vérification tourne à part
+    let flags = if SHOT_DIR.with(|d| d.borrow().is_some()) { gtk::gio::ApplicationFlags::NON_UNIQUE } else { gtk::gio::ApplicationFlags::empty() };
+    let app = adw::Application::builder().application_id(APP_ID).flags(flags).build();
     app.connect_activate(build);
     app.run_with_args::<&str>(&[]);
     Ok(())
@@ -61,6 +63,45 @@ fn build(app: &adw::Application) {
         w.present();
         return;
     }
+    build_window(app);
+}
+
+/// Rouvre la fenêtre pour afficher des réglages modifiés en bloc (valeurs par défaut).
+fn rebuild(widget: &impl IsA<gtk::Widget>) {
+    let Some(old) = widget.root().and_downcast::<gtk::Window>() else { return };
+    let Some(app) = old.application().and_downcast::<adw::Application>() else { return };
+    build_window(&app);
+    old.close();
+}
+
+/// Bouton « valeurs par défaut » d'un onglet, avec confirmation.
+fn reset_button(sh: &Sh, overlay: &adw::ToastOverlay, what: &str, reset: impl Fn(&mut Config) + 'static) -> adw::PreferencesGroup {
+    let g = adw::PreferencesGroup::new();
+    let b = gtk::Button::builder().label("Valeurs par défaut de cet onglet").css_classes(["pill", "destructive-action"]).halign(gtk::Align::Center).margin_top(12).build();
+    g.add(&b);
+    let reset = Rc::new(reset);
+    let (sh, o, what) = (sh.clone(), overlay.clone(), what.to_string());
+    b.connect_clicked(move |b| {
+        let dlg = adw::AlertDialog::builder().heading("Valeurs par défaut").body(format!("Remettre à leurs valeurs par défaut : {what} ?")).build();
+        dlg.add_responses(&[("cancel", "Annuler"), ("reset", "Rétablir")]);
+        dlg.set_response_appearance("reset", adw::ResponseAppearance::Destructive);
+        let (sh, o, reset, b2) = (sh.clone(), o.clone(), reset.clone(), b.clone());
+        dlg.connect_response(None, move |_, r| {
+            if r != "reset" {
+                return;
+            }
+            let reset = reset.clone();
+            match edit_cfg(&sh, move |c| { reset(c); Ok(()) }) {
+                Ok(()) => rebuild(&b2),
+                Err(e) => toast(&o, &format!("{e:#}")),
+            }
+        });
+        dlg.present(Some(b));
+    });
+    g
+}
+
+fn build_window(app: &adw::Application) {
     if let Some(theme) = crate::tray::install_icons() {
         if let Some(d) = gdk::Display::default() {
             gtk::IconTheme::for_display(&d).add_search_path(theme);
@@ -559,6 +600,12 @@ fn games_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
         g.add(&rm);
         page.add(&g);
         page.add(&profile_group(sh, overlay, id, &format!("{} — réponse", game.name), &game.profile));
+        let gid = id.clone();
+        page.add(&reset_button(sh, overlay, &format!("le profil de {}", game.name), move |c| {
+            if let Some(g) = c.games.get_mut(&gid) {
+                g.profile = Default::default();
+            }
+        }));
     }
     page.upcast()
 }
@@ -590,12 +637,15 @@ fn monitors() -> Vec<gdk::Monitor> {
     out
 }
 
-fn open_point_windows(chosen: &[gdk::Monitor], main: usize, inset: f64, on_cancel: Rc<dyn Fn()>) -> PointWindows {
+fn open_point_windows(chosen: &[gdk::Monitor], main: usize, inset: f64, fullscreen: bool, on_cancel: Rc<dyn Fn()>) -> PointWindows {
     // calque transparent : l'écran (le jeu) reste visible sous les cercles
     let css = gtk::CssProvider::new();
-    css.load_from_string(".podtrack-overlay, .podtrack-overlay > * { background: transparent; }");
+    css.load_from_string(
+        "window.podtrack-overlay, window.podtrack-overlay.background, window.podtrack-overlay > * \
+         { background: none; background-color: transparent; box-shadow: none; border: none; }",
+    );
     if let Some(d) = gdk::Display::default() {
-        gtk::style_context_add_provider_for_display(&d, &css, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+        gtk::style_context_add_provider_for_display(&d, &css, gtk::STYLE_PROVIDER_PRIORITY_USER);
     }
     let state = Rc::new(RefCell::new((String::from("center"), 0.0, String::new())));
     let n = chosen.len();
@@ -666,6 +716,8 @@ fn open_point_windows(chosen: &[gdk::Monitor], main: usize, inset: f64, on_cance
             }
         });
         let win = gtk::Window::builder().decorated(false).child(&area).css_classes(["podtrack-overlay"]).build();
+        // le thème donne un fond opaque aux fenêtres par la classe « background »
+        win.remove_css_class("background");
         let keys = gtk::EventControllerKey::new();
         {
             let cancel = on_cancel.clone();
@@ -679,7 +731,14 @@ fn open_point_windows(chosen: &[gdk::Monitor], main: usize, inset: f64, on_cance
             });
         }
         win.add_controller(keys);
-        win.fullscreen_on_monitor(m);
+        if fullscreen {
+            win.fullscreen_on_monitor(m);
+        } else {
+            // GNOME ne compose pas toujours la transparence d'une fenêtre en plein écran
+            let g = m.geometry();
+            win.set_default_size(g.width(), g.height());
+            win.maximize();
+        }
         win.present();
         wins.push((win, area));
     }
@@ -815,8 +874,8 @@ fn calib_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
                 })
             };
             let main = chosen.len() / 2;
-            let inset = config::load(&config::path()).map(|c| c.game_calibration.inset).unwrap_or(0.06);
-            *active.borrow_mut() = Some(open_point_windows(&chosen, main, inset, cancel));
+            let gc = config::load(&config::path()).map(|c| c.game_calibration).unwrap_or_default();
+            *active.borrow_mut() = Some(open_point_windows(&chosen, main, gc.inset, gc.overlay_fullscreen, cancel));
             let (o, active, close_all, side, vert) = (o.clone(), active.clone(), close_all.clone(), side.clone(), vert.clone());
             glib::timeout_add_local(Duration::from_millis(50), move || {
                 if active.borrow().is_none() {
@@ -856,6 +915,11 @@ fn calib_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
             });
         });
     }
+    page.add(&reset_button(sh, overlay, "les réglages des calibrations et la référence d'amplitude", |c| {
+        c.device_calibration = Default::default();
+        c.game_calibration = Default::default();
+        c.baseline = None;
+    }));
     page.upcast()
 }
 
@@ -946,6 +1010,12 @@ fn outputs_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
         let (sh, o) = (sh.clone(), overlay.clone());
         jon.connect_active_notify(move |r| { let v = r.is_active(); if let Err(e) = edit_cfg(&sh, move |c| { c.joystick.enabled = v; Ok(()) }) { toast(&o, &format!("{e:#}")) } });
     }
+    page.add(&reset_button(sh, overlay, "opentrack, la souris et la manette", |c| {
+        c.opentrack = Default::default();
+        c.mouse = Default::default();
+        c.joystick = Default::default();
+        c.bluetooth.stem_events = podtrack_bt::session::BtConfig::default().stem_events;
+    }));
     page.upcast()
 }
 
@@ -1144,6 +1214,12 @@ fn hotkeys_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
         });
     }
     page.add(&g);
+    page.add(&reset_button(sh, overlay, "les raccourcis", |c| {
+        c.hotkeys = Default::default();
+        if let Err(e) = crate::hotkeys::apply(&c.hotkeys) {
+            log::warn!("raccourcis : {e:#}");
+        }
+    }));
     page.upcast()
 }
 
@@ -1337,5 +1413,19 @@ fn advanced_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
         leaf_rows(sh, overlay, &g, format!("/{key}"), &cur[key], &def[key]);
         page.add(&g);
     }
+    page.add(&reset_button(sh, overlay, "tous les réglages de cet onglet (pas les jeux ni les profils d'axes)", |c| {
+        let d = Config::default();
+        c.mouse = d.mouse;
+        c.joystick = d.joystick;
+        c.bluetooth = d.bluetooth;
+        c.engine = d.engine;
+        c.tracker = d.tracker;
+        c.output = d.output;
+        c.bridge = d.bridge;
+        c.steam = d.steam;
+        c.place = d.place;
+        c.device_calibration = d.device_calibration;
+        c.game_calibration = d.game_calibration;
+    }));
     page.upcast()
 }

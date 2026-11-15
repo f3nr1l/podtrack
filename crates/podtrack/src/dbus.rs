@@ -6,7 +6,8 @@ use podtrack_core::calibration::{DeviceCalibration, GameCalibration};
 use std::sync::Arc;
 use zbus::fdo;
 
-pub const NAME: &str = "io.github.f3nr1l.PodTrack";
+/// Distinct de l'identifiant de la fenêtre GTK (io.github.f3nr1l.PodTrack), qui réclame ce nom-là.
+pub const NAME: &str = "io.github.f3nr1l.PodTrack.Daemon";
 pub const PATH: &str = "/io/github/f3nr1l/PodTrack";
 pub const IFACE: &str = "io.github.f3nr1l.PodTrack1";
 
