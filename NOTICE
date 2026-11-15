@@ -1,0 +1,25 @@
+podtrack
+Copyright 2026 René Onier
+
+podtrack is a Rust port of MousePods, with changes (Rust rewrite, GNOME
+interface, TrackIR "Enhanced" table, non-Steam Wine prefixes, tracker switching).
+
+This product includes software derived from MousePods:
+  Copyright 2026 Matteo Gaudioso (starman-tech) — https://github.com/starman-tech/mousepods
+  Apache License 2.0. MousePods documents how AirPods expose their motion sensors
+  (RemoteHID / SensorDataWX over AACP); findings credited to "Matteo Gaudioso
+  (starman-tech), MousePods" (CC BY 4.0), changes made.
+
+Head-tracking bridge for Proton/Wine games, derived from MousePods native/
+(Copyright 2026 Henning Norden — https://github.com/henningnorden/mousepods),
+itself derived from opentrack (https://github.com/opentrack/opentrack),
+Copyright (c) Stanislaw Halik and contributors, ISC licence:
+  Permission to use, copy, modify, and/or distribute this software for any
+  purpose with or without fee is hereby granted, provided that the above
+  copyright notice and this permission notice appear in all copies.
+opentrack's npclient originates from linux-track by uglyDwarf
+(https://github.com/uglyDwarf/linuxtrack), MIT licence.
+
+The TrackIR "Enhanced" table decoding follows opentrack's csv/csv.cpp (ISC).
+
+Not affiliated with Apple Inc. AirPods is a trademark of Apple Inc.

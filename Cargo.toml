@@ -1,0 +1,28 @@
+# podtrack : suivi de tête par AirPods sous Linux, portage Rust de MousePods.
+[workspace]
+resolver = "3"
+members = ["crates/*"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+authors = ["René Onier <f3nr1l@icloud.com>"]
+
+[workspace.dependencies]
+podtrack-core = { path = "crates/podtrack-core" }
+anyhow = "1"
+thiserror = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+log = "0.4"
+env_logger = "0.11"
+libc = "0.2"
+memmap2 = "0.9"
+clap = { version = "4", features = ["derive"] }
+dirs = "6"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
