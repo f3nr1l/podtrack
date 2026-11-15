@@ -108,7 +108,7 @@ enum GameCmd {
 enum CalibCmd {
     /// Axes de l'écouteur (7 étapes guidées dans le terminal).
     Device,
-    /// Amplitude par cinq points regardés (centre, gauche, droite, haut, bas) ; cible : baseline ou un jeu.
+    /// Amplitude par points regardés (centre puis coins) ; cible : baseline, mouse ou un jeu.
     Game {
         target: String,
         #[arg(long, default_value_t = 180.0)]
@@ -182,13 +182,17 @@ fn step_text(step: &str) -> &'static str {
     }
 }
 
-fn point_text(p: &str) -> &'static str {
+pub fn point_text(p: &str) -> &'static str {
     match p {
         "center" => "Regarde le CENTRE de l'écran et tiens la position",
-        "left" => "Regarde le bord GAUCHE de l'écran (ce que la caméra doit atteindre)",
+        "left" => "Regarde le bord GAUCHE de l'écran",
         "right" => "Regarde le bord DROIT de l'écran",
         "top" => "Regarde le HAUT de l'écran",
         "bottom" => "Regarde le BAS de l'écran",
+        "top_left" => "Regarde le coin EN HAUT À GAUCHE",
+        "top_right" => "Regarde le coin EN HAUT À DROITE",
+        "bottom_left" => "Regarde le coin EN BAS À GAUCHE",
+        "bottom_right" => "Regarde le coin EN BAS À DROITE",
         _ => "",
     }
 }

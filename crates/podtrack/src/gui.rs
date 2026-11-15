@@ -590,7 +590,13 @@ fn monitors() -> Vec<gdk::Monitor> {
     out
 }
 
-fn open_point_windows(chosen: &[gdk::Monitor], main: usize, on_cancel: Rc<dyn Fn()>) -> PointWindows {
+fn open_point_windows(chosen: &[gdk::Monitor], main: usize, inset: f64, on_cancel: Rc<dyn Fn()>) -> PointWindows {
+    // calque transparent : l'écran (le jeu) reste visible sous les cercles
+    let css = gtk::CssProvider::new();
+    css.load_from_string(".podtrack-overlay, .podtrack-overlay > * { background: transparent; }");
+    if let Some(d) = gdk::Display::default() {
+        gtk::style_context_add_provider_for_display(&d, &css, gtk::STYLE_PROVIDER_PRIORITY_APPLICATION);
+    }
     let state = Rc::new(RefCell::new((String::from("center"), 0.0, String::new())));
     let n = chosen.len();
     let mut wins = Vec::new();
@@ -601,52 +607,65 @@ fn open_point_windows(chosen: &[gdk::Monitor], main: usize, on_cancel: Rc<dyn Fn
         let (first, last) = (i == 0, i + 1 == n);
         area.set_draw_func(move |_, cr, w, h| {
             let (w, h) = (w as f64, h as f64);
-            cr.set_source_rgb(0.07, 0.07, 0.08);
+            cr.set_operator(gtk::cairo::Operator::Source);
+            cr.set_source_rgba(0.0, 0.0, 0.0, 0.15);
             let _ = cr.paint();
+            cr.set_operator(gtk::cairo::Operator::Over);
             let (point, progress, hint) = st.borrow().clone();
-            let pos = match point.as_str() {
-                "center" if is_main => Some((w / 2.0, h / 2.0)),
-                "top" if is_main => Some((w / 2.0, h * 0.06)),
-                "bottom" if is_main => Some((w / 2.0, h * 0.94)),
-                "left" if first => Some((w * 0.04, h / 2.0)),
-                "right" if last => Some((w * 0.96, h / 2.0)),
-                _ => None,
+            let (sx, sy): (i8, i8) = match point.as_str() {
+                "left" => (-1, 0),
+                "right" => (1, 0),
+                "top" => (0, 1),
+                "bottom" => (0, -1),
+                "top_left" => (-1, 1),
+                "top_right" => (1, 1),
+                "bottom_left" => (-1, -1),
+                "bottom_right" => (1, -1),
+                _ => (0, 0),
             };
-            if let Some((x, y)) = pos {
-                cr.set_source_rgba(0.21, 0.52, 0.89, 1.0);
-                cr.arc(x, y, 14.0, 0.0, std::f64::consts::TAU);
+            // la colonne du point : moniteur de gauche, de droite ou principal
+            let here = match sx {
+                -1 => first,
+                1 => last,
+                _ => is_main,
+            };
+            if here {
+                let x = w * (0.5 + sx as f64 * (0.5 - inset));
+                let y = h * (0.5 - sy as f64 * (0.5 - inset));
+                cr.set_source_rgba(0.0, 0.0, 0.0, 0.45);
+                cr.arc(x, y, 40.0, 0.0, std::f64::consts::TAU);
+                let _ = cr.fill();
+                cr.set_source_rgba(1.0, 1.0, 1.0, 0.95);
+                cr.set_line_width(3.0);
+                cr.arc(x, y, 26.0, 0.0, std::f64::consts::TAU);
+                let _ = cr.stroke();
+                cr.arc(x, y, 5.0, 0.0, std::f64::consts::TAU);
                 let _ = cr.fill();
                 cr.set_source_rgba(0.95, 0.62, 0.1, 1.0);
-                cr.set_line_width(5.0);
-                cr.arc(x, y, 30.0, -std::f64::consts::FRAC_PI_2, -std::f64::consts::FRAC_PI_2 + progress * std::f64::consts::TAU);
+                cr.set_line_width(6.0);
+                cr.arc(x, y, 34.0, -std::f64::consts::FRAC_PI_2, -std::f64::consts::FRAC_PI_2 + progress * std::f64::consts::TAU);
                 let _ = cr.stroke();
             }
             if is_main {
-                let text = match point.as_str() {
-                    "center" => "Regarde le point au centre et tiens la position",
-                    "left" => "Regarde le point à GAUCHE (là où la caméra doit aller au maximum)",
-                    "right" => "Regarde le point à DROITE",
-                    "top" => "Regarde le point en HAUT",
-                    "bottom" => "Regarde le point en BAS",
-                    _ => "",
-                };
-                cr.set_source_rgba(0.9, 0.9, 0.92, 1.0);
-                cr.select_font_face("Sans", gtk::cairo::FontSlant::Normal, gtk::cairo::FontWeight::Bold);
-                cr.set_font_size(26.0);
+                let text = crate::point_text(&point);
                 let line = if hint.is_empty() { text.to_string() } else { format!("{text} — {hint}") };
+                cr.select_font_face("Sans", gtk::cairo::FontSlant::Normal, gtk::cairo::FontWeight::Bold);
+                cr.set_font_size(24.0);
                 if let Ok(ext) = cr.text_extents(&line) {
-                    cr.move_to(w / 2.0 - ext.width() / 2.0, h * 0.62);
+                    let (tx, ty) = (w / 2.0 - ext.width() / 2.0, h * 0.5 + 90.0);
+                    cr.set_source_rgba(0.0, 0.0, 0.0, 0.6);
+                    cr.rectangle(tx - 20.0, ty - 34.0, ext.width() + 40.0, 72.0);
+                    let _ = cr.fill();
+                    cr.set_source_rgba(1.0, 1.0, 1.0, 1.0);
+                    cr.move_to(tx, ty);
                     let _ = cr.show_text(&line);
-                }
-                cr.set_font_size(16.0);
-                let sub = "Échap pour annuler";
-                if let Ok(ext) = cr.text_extents(sub) {
-                    cr.move_to(w / 2.0 - ext.width() / 2.0, h * 0.62 + 34.0);
-                    let _ = cr.show_text(sub);
+                    cr.set_font_size(14.0);
+                    cr.move_to(tx, ty + 24.0);
+                    let _ = cr.show_text("tiens la position deux secondes · Échap pour annuler");
                 }
             }
         });
-        let win = gtk::Window::builder().decorated(false).child(&area).build();
+        let win = gtk::Window::builder().decorated(false).child(&area).css_classes(["podtrack-overlay"]).build();
         let keys = gtk::EventControllerKey::new();
         {
             let cancel = on_cancel.clone();
@@ -728,10 +747,13 @@ fn calib_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
     // amplitude par points
     let g2 = adw::PreferencesGroup::builder()
         .title("Amplitude par points à l'écran")
-        .description("Un point s'affiche à la fois : centre, gauche, droite, haut, bas. Regarde-le et tiens la position deux secondes. L'angle de ta tête à chaque bord devient l'amplitude : à ce bord, la caméra atteint son maximum.")
+        .description("Des cercles s'affichent par-dessus l'écran, un à la fois : centre, puis les quatre coins. Regarde chacun et tiens la position deux secondes. L'angle de ta tête vers chaque coin devient l'amplitude : là, la caméra (ou le curseur) atteint son maximum.")
         .build();
     let cfg = config::load(&sh.borrow().cfg_path).unwrap_or_default();
-    let mut targets: Vec<(String, String)> = vec![("baseline".into(), "Référence (jeux sans réglage propre)".into())];
+    let mut targets: Vec<(String, String)> = vec![
+        ("baseline".into(), "Référence (jeux sans réglage propre)".into()),
+        ("mouse".into(), "Souris en mode pointeur".into()),
+    ];
     targets.extend(cfg.games.iter().map(|(id, g)| (id.clone(), g.name.clone())));
     let model = gtk::StringList::new(&targets.iter().map(|t| t.1.as_str()).collect::<Vec<_>>());
     let target_row = adw::ComboRow::builder().title("Pour").model(&model).build();
@@ -793,7 +815,8 @@ fn calib_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
                 })
             };
             let main = chosen.len() / 2;
-            *active.borrow_mut() = Some(open_point_windows(&chosen, main, cancel));
+            let inset = config::load(&config::path()).map(|c| c.game_calibration.inset).unwrap_or(0.06);
+            *active.borrow_mut() = Some(open_point_windows(&chosen, main, inset, cancel));
             let (o, active, close_all, side, vert) = (o.clone(), active.clone(), close_all.clone(), side.clone(), vert.clone());
             glib::timeout_add_local(Duration::from_millis(50), move || {
                 if active.borrow().is_none() {

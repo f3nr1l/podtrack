@@ -94,7 +94,10 @@ pub fn apply_game_calibration(s: &mut State, target_side: f64, target_vert: f64)
     let mut b = st.result.unwrap();
     b.target_side = target_side;
     b.target_vert = target_vert;
-    let msg = if target == "baseline" {
+    let msg = if target == "mouse" {
+        s.cfg.mouse.pointeur.range = Some(podtrack_core::mouse::AimRange { x_neg: b.yaw.neg, x_pos: b.yaw.pos, y_pos: b.pitch.pos, y_neg: b.pitch.neg });
+        format!("souris (pointeur) : {:.1}/{:.1}° × {:.1}/{:.1}°", b.yaw.neg, b.yaw.pos, b.pitch.neg, b.pitch.pos)
+    } else if target == "baseline" {
         s.cfg.baseline = Some(b.clone());
         format!("référence : lacet {:.1}/{:.1}°, tangage {:.1}/{:.1}°", b.yaw.neg, b.yaw.pos, b.pitch.neg, b.pitch.pos)
     } else {

@@ -102,7 +102,7 @@ impl Api {
     /// Calibration de l'amplitude par points à l'écran ; `target` = `baseline` ou un jeu.
     fn game_calibration_start(&self, target: &str) -> fdo::Result<()> {
         let mut s = self.hub.lock();
-        if target != "baseline" && !s.cfg.games.contains_key(target) {
+        if target != "baseline" && target != "mouse" && !s.cfg.games.contains_key(target) {
             return Err(fdo::Error::Failed(format!("jeu inconnu : {target}")));
         }
         s.tracker_suspend_autocenter(true);

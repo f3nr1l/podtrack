@@ -241,33 +241,61 @@ impl DeviceCalibration {
 // ------------------------------------------------------------------------- jeu (points à l'écran)
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 pub enum Point {
     Center,
     Left,
     Right,
     Top,
     Bottom,
+    TopLeft,
+    TopRight,
+    BottomLeft,
+    BottomRight,
 }
 
-pub const POINTS: [Point; 5] = [Point::Center, Point::Left, Point::Right, Point::Top, Point::Bottom];
+impl Point {
+    /// Côté attendu : (horizontal, vertical), −1 gauche / bas, +1 droite / haut, 0 centré.
+    pub fn sides(self) -> (i8, i8) {
+        match self {
+            Point::Center => (0, 0),
+            Point::Left => (-1, 0),
+            Point::Right => (1, 0),
+            Point::Top => (0, 1),
+            Point::Bottom => (0, -1),
+            Point::TopLeft => (-1, 1),
+            Point::TopRight => (1, 1),
+            Point::BottomLeft => (-1, -1),
+            Point::BottomRight => (1, -1),
+        }
+    }
+}
+
+/// Suite par défaut : le centre puis les quatre coins.
+pub const CORNERS: [Point; 5] = [Point::Center, Point::TopLeft, Point::TopRight, Point::BottomRight, Point::BottomLeft];
+/// Suite de MousePods : le centre puis les quatre bords.
+pub const EDGES: [Point; 5] = [Point::Center, Point::Left, Point::Right, Point::Top, Point::Bottom];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GameCalibConfig {
+    /// Points à regarder, dans l'ordre ; le premier doit être le centre.
+    pub points: Vec<Point>,
     /// Durée de maintien sur chaque point (s).
     pub hold_s: f64,
     /// Le lacet et le tangage restent chacun dans cet écart pendant le maintien (°).
     pub still_deg: f64,
-    /// Un point du bord est au moins à cette distance du centre, de son côté (°).
+    /// Un point excentré est au moins à cette distance du centre, de son côté (°).
     pub min_deg: f64,
     /// Sans données pendant cette durée : échec (s).
     pub no_signal_s: f64,
+    /// Position des points à l'écran : marge depuis les bords (fraction de l'écran).
+    pub inset: f64,
 }
 
 impl Default for GameCalibConfig {
     fn default() -> Self {
-        Self { hold_s: 2.0, still_deg: 1.5, min_deg: 5.0, no_signal_s: 3.0 }
+        Self { points: CORNERS.to_vec(), hold_s: 2.0, still_deg: 1.5, min_deg: 5.0, no_signal_s: 3.0, inset: 0.06 }
     }
 }
 
@@ -290,6 +318,8 @@ pub enum End {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GameCalibState {
     pub point: Option<Point>,
+    pub index: usize,
+    pub total: usize,
     pub end: Option<End>,
     pub progress: f64,
     pub hint: Option<Hint>,
@@ -299,10 +329,12 @@ pub struct GameCalibState {
 #[derive(Debug, Clone)]
 pub struct GameCalibration {
     pub cfg: GameCalibConfig,
+    points: Vec<Point>,
     index: usize,
     window: VecDeque<(f64, f64, f64)>,
     hint: Option<Hint>,
-    edges: [f64; 5],
+    /// (point, lacet, tangage) capturés.
+    captured: Vec<(Point, f64, f64)>,
     end: Option<End>,
     last_seen: Option<f64>,
     now: f64,
@@ -312,7 +344,11 @@ pub struct GameCalibration {
 
 impl GameCalibration {
     pub fn new(cfg: GameCalibConfig) -> Self {
-        Self { cfg, index: 0, window: VecDeque::new(), hint: None, edges: [0.0; 5], end: None, last_seen: None, now: 0.0, center_reached: false }
+        let mut points = cfg.points.clone();
+        if points.first() != Some(&Point::Center) {
+            points.insert(0, Point::Center); // le centre sert de référence
+        }
+        Self { cfg, points, index: 0, window: VecDeque::new(), hint: None, captured: Vec::new(), end: None, last_seen: None, now: 0.0, center_reached: false }
     }
 
     pub fn finished(&self) -> bool {
@@ -369,31 +405,51 @@ impl GameCalibration {
     }
 
     fn capture(&mut self, yaw: f64, pitch: f64) {
-        let point = POINTS[self.index];
+        let point = self.points[self.index];
         if point == Point::Center {
             self.center_reached = true;
         } else {
-            let value = match point {
-                Point::Left => -yaw,
-                Point::Right => yaw,
-                Point::Top => pitch,
-                _ => -pitch,
-            };
-            if value < 0.0 && value.abs() >= self.cfg.min_deg {
-                self.hint = Some(Hint::WrongSide);
-                return;
+            let (sx, sy) = point.sides();
+            for (side, angle) in [(sx, yaw), (sy, pitch)] {
+                if side == 0 {
+                    continue;
+                }
+                let value = side as f64 * angle;
+                if value < 0.0 && value.abs() >= self.cfg.min_deg {
+                    self.hint = Some(Hint::WrongSide);
+                    return;
+                }
+                if value < self.cfg.min_deg {
+                    self.hint = Some(Hint::TooClose);
+                    return;
+                }
             }
-            if value < self.cfg.min_deg {
-                self.hint = Some(Hint::TooClose);
-                return;
-            }
-            self.edges[self.index] = value;
+            self.captured.push((point, yaw, pitch));
         }
         self.hint = None;
         self.index += 1;
-        if self.index == POINTS.len() {
+        if self.index == self.points.len() {
             self.end = Some(End::Done);
         }
+    }
+
+    /// Amplitudes moyennes de chaque côté ; None si un côté n'a pas été visé.
+    fn result(&self) -> Option<Baseline> {
+        let mean = |pick: &dyn Fn(&(Point, f64, f64)) -> Option<f64>| {
+            let v: Vec<f64> = self.captured.iter().filter_map(pick).collect();
+            (!v.is_empty()).then(|| v.iter().sum::<f64>() / v.len() as f64)
+        };
+        Some(Baseline {
+            yaw: Range {
+                neg: mean(&|c| (c.0.sides().0 < 0).then_some(-c.1))?,
+                pos: mean(&|c| (c.0.sides().0 > 0).then_some(c.1))?,
+            },
+            pitch: Range {
+                neg: mean(&|c| (c.0.sides().1 < 0).then_some(-c.2))?,
+                pos: mean(&|c| (c.0.sides().1 > 0).then_some(c.2))?,
+            },
+            ..Default::default()
+        })
     }
 
     pub fn state(&self) -> GameCalibState {
@@ -401,17 +457,14 @@ impl GameCalibration {
             (false, Some(f)) => ((self.now - f.0) / self.cfg.hold_s).min(1.0),
             _ => 0.0,
         };
-        let result = (self.end == Some(End::Done)).then(|| Baseline {
-            yaw: Range { neg: self.edges[1], pos: self.edges[2] },
-            pitch: Range { neg: self.edges[4], pos: self.edges[3] },
-            ..Default::default()
-        });
         GameCalibState {
-            point: if self.finished() { None } else { Some(POINTS[self.index]) },
+            point: if self.finished() { None } else { Some(self.points[self.index]) },
+            index: self.index,
+            total: self.points.len(),
             end: self.end,
             progress: vec::round_dec(progress, 3),
             hint: self.hint,
-            result,
+            result: if self.end == Some(End::Done) { self.result() } else { None },
         }
     }
 }
@@ -429,9 +482,26 @@ mod tests {
         }
     }
 
+    fn edges() -> GameCalibConfig {
+        GameCalibConfig { points: EDGES.to_vec(), ..Default::default() }
+    }
+
+    #[test]
+    fn corners_run() {
+        let mut c = GameCalibration::new(GameCalibConfig::default());
+        let mut t = 0.0;
+        run(&mut c, &mut t, 0.0, 0.0, 2.1);
+        run(&mut c, &mut t, -20.0, 10.0, 2.1); // haut gauche
+        run(&mut c, &mut t, 30.0, 12.0, 2.1); // haut droit
+        run(&mut c, &mut t, 28.0, -9.0, 2.1); // bas droit
+        run(&mut c, &mut t, -22.0, -11.0, 2.1); // bas gauche
+        let r = c.state().result.unwrap();
+        assert_eq!((r.yaw.neg, r.yaw.pos, r.pitch.pos, r.pitch.neg), (21.0, 29.0, 11.0, 10.0));
+    }
+
     #[test]
     fn full_run() {
-        let mut c = GameCalibration::new(GameCalibConfig::default());
+        let mut c = GameCalibration::new(edges());
         let mut t = 0.0;
         run(&mut c, &mut t, 0.0, 0.0, 2.1);
         assert!(c.center_reached);
@@ -447,7 +517,7 @@ mod tests {
 
     #[test]
     fn hints_and_no_signal() {
-        let mut c = GameCalibration::new(GameCalibConfig::default());
+        let mut c = GameCalibration::new(edges());
         let mut t = 0.0;
         run(&mut c, &mut t, 0.0, 0.0, 2.1);
         run(&mut c, &mut t, -3.0, 0.0, 2.1);
