@@ -148,7 +148,8 @@ pub fn running() -> bool {
 
 /// Démarre le démon : service utilisateur systemd, à défaut processus détaché.
 pub fn start_daemon() -> anyhow::Result<()> {
-    let ok = std::process::Command::new("systemctl").args(["--user", "start", "podtrack.service"]).status().is_ok_and(|s| s.success());
+    let ok = crate::sandbox::flatpak_id().is_none()
+        && std::process::Command::new("systemctl").args(["--user", "start", "podtrack.service"]).status().is_ok_and(|s| s.success());
     if !ok {
         std::process::Command::new(std::env::current_exe()?).arg("daemon").stdin(std::process::Stdio::null()).spawn()?;
     }

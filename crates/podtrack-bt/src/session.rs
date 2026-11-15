@@ -39,6 +39,9 @@ pub struct BtConfig {
     pub relaunch_case_s: f64,
     /// Sans données malgré les relances pendant ce délai, le canal est fermé puis rouvert (s ; 0 = jamais).
     pub reopen_after_s: f64,
+    /// Après ce nombre de réouvertures sans données, déconnexion puis reconnexion Bluetooth
+    /// (les écouteurs cessent parfois d'annoncer leurs capteurs ; coupe l'audio un instant ; 0 = jamais).
+    pub bt_reset_after_reopens: u32,
     /// Attente entre deux tentatives de connexion : double de min à max (s).
     pub reconnect_min_s: f64,
     pub reconnect_max_s: f64,
@@ -66,6 +69,7 @@ impl Default for BtConfig {
             relaunch_s: 4.0,
             relaunch_case_s: 20.0,
             reopen_after_s: 30.0,
+            bt_reset_after_reopens: 2,
             reconnect_min_s: 2.0,
             reconnect_max_s: 20.0,
             stem_events: false,

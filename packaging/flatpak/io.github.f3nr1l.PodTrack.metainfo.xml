@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.f3nr1l.PodTrack</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>Apache-2.0</project_license>
+  <name>podtrack</name>
+  <summary>Suivi de tête par AirPods pour les jeux et le pointage</summary>
+  <description>
+    <p>
+      podtrack utilise les capteurs de mouvement des AirPods comme traqueur de tête sous Linux.
+      Il fournit les protocoles TrackIR et FreeTrack aux jeux lancés sous Wine ou Proton, y compris
+      les jeux qui exigent des données chiffrées, une sortie opentrack, une manette virtuelle et
+      le pointage par la tête.
+    </p>
+    <ul>
+      <li>Jeux Steam sous Proton et préfixes Wine hors Steam</li>
+      <li>Cohabitation avec un autre traqueur, dont les réglages sont restaurés à l'identique</li>
+      <li>Courbes de réponse, zone morte et lissage par jeu</li>
+      <li>Calibration par points affichés à l'écran</li>
+    </ul>
+  </description>
+  <url type="homepage">https://github.com/f3nr1l/podtrack</url>
+  <developer id="io.github.f3nr1l">
+    <name>René Onier</name>
+  </developer>
+  <launchable type="desktop-id">io.github.f3nr1l.PodTrack.desktop</launchable>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.1.0" date="2026-11-15"/>
+  </releases>
+</component>

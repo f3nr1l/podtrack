@@ -29,7 +29,7 @@ pub fn install_icons() -> Option<PathBuf> {
     }
     let user_apps = base.join("icons").join("hicolor").join("scalable").join("apps");
     if std::fs::create_dir_all(&user_apps).is_ok() {
-        let _ = std::fs::write(user_apps.join("podtrack.svg"), ICONS[3].1);
+        let _ = std::fs::write(user_apps.join("io.github.f3nr1l.PodTrack.svg"), ICONS[3].1);
     }
     Some(theme)
 }
@@ -94,7 +94,7 @@ fn snapshot(hub: &Hub) -> Snapshot {
 }
 
 fn notify(text: &str) {
-    let _ = std::process::Command::new("notify-send").args(["-a", "podtrack", "-i", "podtrack", "podtrack", text]).spawn();
+    let _ = crate::sandbox::host("notify-send").args(["-a", "podtrack", "-i", "io.github.f3nr1l.PodTrack", "podtrack", text]).spawn();
 }
 
 struct PodTray {

@@ -3,7 +3,6 @@
 
 use crate::config::Hotkeys;
 use anyhow::{Context, Result};
-use std::process::Command;
 
 const SCHEMA: &str = "org.gnome.settings-daemon.plugins.media-keys";
 const BASE: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybindings/";
@@ -11,7 +10,7 @@ const BASE: &str = "/org/gnome/settings-daemon/plugins/media-keys/custom-keybind
 const LEGACY: [&str; 1] = ["airpods-mouse-recenter"];
 
 fn gs(args: &[&str]) -> Result<String> {
-    let out = Command::new("gsettings").args(args).output().context("gsettings introuvable")?;
+    let out = crate::sandbox::host("gsettings").args(args).output().context("gsettings introuvable")?;
     if !out.status.success() {
         anyhow::bail!("gsettings {} : {}", args.join(" "), String::from_utf8_lossy(&out.stderr).trim());
     }
@@ -30,7 +29,7 @@ fn set_list(paths: &[String]) -> Result<()> {
 }
 
 fn exe() -> String {
-    std::env::current_exe().map(|p| p.display().to_string()).unwrap_or_else(|_| "podtrack".into())
+    crate::sandbox::launcher()
 }
 
 /// Écrit (ou retire si vide) les raccourcis de podtrack.

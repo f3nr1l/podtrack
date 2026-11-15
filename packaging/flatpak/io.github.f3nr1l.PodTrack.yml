@@ -1,0 +1,50 @@
+# Flatpak de podtrack. Construction locale (accès réseau pour cargo) :
+#   flatpak-builder --user --install --force-clean build-dir packaging/flatpak/io.github.f3nr1l.PodTrack.yml
+# Pour Flathub, remplacer l'accès réseau par les sources générées par flatpak-cargo-generator.
+app-id: io.github.f3nr1l.PodTrack
+runtime: org.gnome.Platform
+runtime-version: '51'
+sdk: org.gnome.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.rust-stable
+command: podtrack
+finish-args:
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+  - --device=dri
+  # /dev/uinput : pointage par la tête et manette virtuelle
+  - --device=all
+  # canal L2CAP vers les AirPods et BlueZ
+  - --allow=bluetooth
+  - --system-talk-name=org.bluez
+  # icône de barre, service D-Bus du démon
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --own-name=io.github.f3nr1l.PodTrack.Daemon
+  # raccourcis GNOME, notifications et détection des jeux lancés, sur l'hôte
+  - --talk-name=org.freedesktop.Flatpak
+  # préfixes Wine des jeux (registre, DLL), Steam en Flatpak, démarrage automatique
+  - --filesystem=home
+  - --filesystem=xdg-config/autostart:create
+build-options:
+  append-path: /usr/lib/sdk/rust-stable/bin
+  build-args:
+    - --share=network
+  env:
+    CARGO_HOME: /run/build/podtrack/cargo
+modules:
+  - name: podtrack
+    buildsystem: simple
+    build-commands:
+      - cargo build --release -p podtrack
+      - install -Dm755 target/release/podtrack /app/bin/podtrack
+      - install -Dm644 packaging/io.github.f3nr1l.PodTrack.desktop /app/share/applications/io.github.f3nr1l.PodTrack.desktop
+      - install -Dm644 packaging/flatpak/io.github.f3nr1l.PodTrack.metainfo.xml /app/share/metainfo/io.github.f3nr1l.PodTrack.metainfo.xml
+      - install -Dm644 crates/podtrack/data/icons/podtrack.svg /app/share/icons/hicolor/scalable/apps/io.github.f3nr1l.PodTrack.svg
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - target
+          - build-dir
+          - .flatpak-builder

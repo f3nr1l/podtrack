@@ -131,7 +131,7 @@ fn build_window(app: &adw::Application) {
     view.add_bottom_bar(&bar);
     view.set_content(Some(&overlay));
 
-    let win = adw::ApplicationWindow::builder().application(app).title("podtrack").icon_name("podtrack").default_width(900).default_height(720).content(&view).build();
+    let win = adw::ApplicationWindow::builder().application(app).title("podtrack").icon_name(APP_ID).default_width(900).default_height(720).content(&view).build();
     // barre du bas seulement quand la fenêtre est étroite
     let bp = adw::Breakpoint::new(adw::BreakpointCondition::new_length(adw::BreakpointConditionLengthType::MaxWidth, 620.0, adw::LengthUnit::Sp));
     bp.add_setter(&bar, "reveal", Some(&true.to_value()));
@@ -1246,6 +1246,7 @@ fn label_for(path: &str) -> Option<&'static str> {
         "/bluetooth/relaunch_s" => "Relance du flux sans données (s)",
         "/bluetooth/relaunch_case_s" => "Relance dans le boîtier (s)",
         "/bluetooth/reopen_after_s" => "Réouverture du canal sans données (s, 0 = jamais)",
+        "/bluetooth/bt_reset_after_reopens" => "Reconnexion Bluetooth après N réouvertures sans données (0 = jamais)",
         "/bluetooth/reconnect_min_s" => "Reconnexion : premier délai (s)",
         "/bluetooth/reconnect_max_s" => "Reconnexion : délai maximal (s)",
         "/bluetooth/stem_events" => "Recevoir les appuis sur la tige",

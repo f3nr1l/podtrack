@@ -28,7 +28,7 @@ comprises), sortie opentrack, manette virtuelle et pointage par la tête. Interf
 install -Dm755 podtrack %{buildroot}%{_bindir}/podtrack
 install -Dm644 podtrack.service %{buildroot}%{_userunitdir}/podtrack.service
 install -Dm644 io.github.f3nr1l.PodTrack.desktop %{buildroot}%{_datadir}/applications/io.github.f3nr1l.PodTrack.desktop
-install -Dm644 podtrack.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/podtrack.svg
+install -Dm644 io.github.f3nr1l.PodTrack.svg %{buildroot}%{_datadir}/icons/hicolor/scalable/apps/io.github.f3nr1l.PodTrack.svg
 install -Dm644 io.github.f3nr1l.PodTrack.Daemon.service %{buildroot}%{_datadir}/dbus-1/services/io.github.f3nr1l.PodTrack.Daemon.service
 
 %post
@@ -43,7 +43,7 @@ install -Dm644 io.github.f3nr1l.PodTrack.Daemon.service %{buildroot}%{_datadir}/
 %{_bindir}/podtrack
 %{_userunitdir}/podtrack.service
 %{_datadir}/applications/io.github.f3nr1l.PodTrack.desktop
-%{_datadir}/icons/hicolor/scalable/apps/podtrack.svg
+%{_datadir}/icons/hicolor/scalable/apps/io.github.f3nr1l.PodTrack.svg
 %{_datadir}/dbus-1/services/io.github.f3nr1l.PodTrack.Daemon.service
 
 %changelog

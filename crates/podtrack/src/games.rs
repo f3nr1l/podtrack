@@ -24,6 +24,13 @@ fn dll_source(s: &State) -> Result<PathBuf> {
 
 pub fn game_running(s: &State, id: &str) -> Result<bool> {
     let g = s.cfg.games.get(id).with_context(|| format!("jeu inconnu : {id}"))?;
+    // dans un Flatpak, les processus de l'hôte ne sont visibles qu'en interrogeant l'hôte
+    if crate::sandbox::flatpak_id().is_some() {
+        return Ok(match &g.kind {
+            GameKind::Wine { prefix } => crate::sandbox::host_env_match(&[format!("WINEPREFIX={}", crate::config::expand(prefix).display())]),
+            GameKind::Steam { appid, .. } => crate::sandbox::host_env_match(&[format!("SteamAppId={appid}"), format!("STEAM_COMPAT_APP_ID={appid}")]),
+        });
+    }
     Ok(match &g.kind {
         GameKind::Wine { prefix } => procs::prefix_in_use(&crate::config::expand(prefix)),
         GameKind::Steam { appid, .. } => procs::steam_app_running(appid),

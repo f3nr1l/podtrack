@@ -8,6 +8,7 @@ mod gui;
 mod hotkeys;
 mod hub;
 mod import;
+mod sandbox;
 mod signals;
 mod steam;
 mod texts;
@@ -78,6 +79,11 @@ enum Cmd {
         /// Correspondance d'identifiant MousePods → podtrack, ex. 900000001=mon-jeu (répétable).
         #[arg(long = "map")]
         map: Vec<String>,
+    },
+    /// Démarrage automatique du démon à l'ouverture de session (sans service systemd, ex. Flatpak).
+    Autostart {
+        /// on ou off
+        state: String,
     },
     /// Configuration.
     Config {
@@ -349,6 +355,24 @@ fn main() -> Result<()> {
             })?;
             for d in done {
                 println!("{d}");
+            }
+        }
+        Cmd::Autostart { state } => {
+            let file = dirs::config_dir().context("pas de dossier de configuration")?.join("autostart").join("io.github.f3nr1l.PodTrack.Daemon.desktop");
+            match state.as_str() {
+                "on" => {
+                    std::fs::create_dir_all(file.parent().unwrap())?;
+                    std::fs::write(&file, format!(
+                        "[Desktop Entry]\nType=Application\nName=podtrack (démon)\nExec={} daemon\nIcon=io.github.f3nr1l.PodTrack\nNoDisplay=true\nX-GNOME-Autostart-enabled=true\n",
+                        sandbox::launcher()
+                    ))?;
+                    println!("démarrage automatique activé : {}", file.display());
+                }
+                "off" => {
+                    let _ = std::fs::remove_file(&file);
+                    println!("démarrage automatique désactivé");
+                }
+                s => bail!("état inconnu : {s} (on ou off)"),
             }
         }
         Cmd::Config { cmd } => match cmd {

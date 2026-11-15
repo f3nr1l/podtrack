@@ -80,7 +80,7 @@ pub struct OutputConfig {
 
 impl Default for OutputConfig {
     fn default() -> Self {
-        Self { rate_hz: 120.0, shm_dir: "/dev/shm".into(), shm_name: "podtrack".into(), stale_after_s: 1.0, max_dt: 0.1 }
+        Self { rate_hz: 120.0, shm_dir: crate::sandbox::default_shm_dir(), shm_name: "podtrack".into(), stale_after_s: 1.0, max_dt: 0.1 }
     }
 }
 

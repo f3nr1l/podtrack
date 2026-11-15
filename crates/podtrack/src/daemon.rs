@@ -11,6 +11,8 @@ use std::time::Duration;
 fn bt_loop(hub: Arc<Hub>) {
     let mut backoff = 0.0;
     let mut hint: Option<String> = None;
+    // réouvertures consécutives sans aucune donnée
+    let mut dry_reopens: u32 = 0;
     loop {
         let (active, quit, cfg) = {
             let s = hub.lock();
@@ -27,6 +29,17 @@ fn bt_loop(hub: Arc<Hub>) {
             let g = hub.lock();
             let _ = hub.wake.wait_timeout(g, Duration::from_millis(500));
             continue;
+        }
+        if cfg.bt_reset_after_reopens > 0 && dry_reopens >= cfg.bt_reset_after_reopens {
+            dry_reopens = 0;
+            if let (Ok(bz), Some(addr)) = (Bluez::system(), hint.as_deref()) {
+                if let Ok(Some(dev)) = bz.device(addr) {
+                    log::info!("capteurs muets malgré les réouvertures : déconnexion et reconnexion Bluetooth de {}", dev.address);
+                    bz.disconnect(&dev, Duration::from_secs(5));
+                    std::thread::sleep(Duration::from_secs(2));
+                    bz.connect(&dev, Duration::from_secs_f64(cfg.bt_connect_timeout_s));
+                }
+            }
         }
         let opened = Bluez::system().and_then(|bz| Session::open(&bz, &cfg, hint.as_deref()));
         let mut sess = match opened {
@@ -55,6 +68,7 @@ fn bt_loop(hub: Arc<Hub>) {
         sess.start_tracking();
         let mut last_start = hub.lock().now();
         let mut last_motion = last_start;
+        let mut got_motion = false;
         let err = loop {
             let events = match sess.poll(Duration::from_millis(200)) {
                 Ok(ev) => ev,
@@ -64,6 +78,8 @@ fn bt_loop(hub: Arc<Hub>) {
             let now = s.now();
             if events.iter().any(|e| matches!(e, Event::Motion(b) if !b.is_empty())) {
                 last_motion = now;
+                got_motion = true;
+                dry_reopens = 0;
                 s.conn = Conn::Receiving;
             }
             s.on_events(events, now);
@@ -74,6 +90,9 @@ fn bt_loop(hub: Arc<Hub>) {
             // relances sans effet : on rouvre le canal (sans couper la liaison Bluetooth ni l'audio)
             let reopen = s.cfg.bluetooth.reopen_after_s;
             if reopen > 0.0 && s.place != Some(Place::Case) && now - last_motion > reopen {
+                if !got_motion {
+                    dry_reopens += 1;
+                }
                 break Some(format!("pas de données depuis {:.0} s : réouverture du canal", now - last_motion));
             }
             let restart = std::mem::take(&mut s.restart_stream);

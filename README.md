@@ -74,6 +74,7 @@ cargo build --release
 install -m755 target/release/podtrack ~/.local/bin/
 install -Dm644 packaging/podtrack.service ~/.config/systemd/user/podtrack.service
 install -Dm644 packaging/io.github.f3nr1l.PodTrack.desktop ~/.local/share/applications/
+install -Dm644 crates/podtrack/data/icons/podtrack.svg ~/.local/share/icons/hicolor/scalable/apps/io.github.f3nr1l.PodTrack.svg
 systemctl --user daemon-reload && systemctl --user enable --now podtrack.service
 ```
 
