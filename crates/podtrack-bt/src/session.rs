@@ -37,6 +37,8 @@ pub struct BtConfig {
     /// Sans données depuis ce délai, les flux sont relancés (s) ; dans le boîtier, délai plus long.
     pub relaunch_s: f64,
     pub relaunch_case_s: f64,
+    /// Sans données malgré les relances pendant ce délai, le canal est fermé puis rouvert (s ; 0 = jamais).
+    pub reopen_after_s: f64,
     /// Attente entre deux tentatives de connexion : double de min à max (s).
     pub reconnect_min_s: f64,
     pub reconnect_max_s: f64,
@@ -63,6 +65,7 @@ impl Default for BtConfig {
             activity_pause_s: 0.25,
             relaunch_s: 4.0,
             relaunch_case_s: 20.0,
+            reopen_after_s: 30.0,
             reconnect_min_s: 2.0,
             reconnect_max_s: 20.0,
             stem_events: false,
@@ -149,6 +152,7 @@ impl Session {
     }
 
     pub fn send(&self, pkt: &[u8]) {
+        log::debug!("émis {}", hex(pkt));
         if let Err(e) = self.link.send(pkt) {
             log::warn!("envoi AAP impossible : {e}");
         }
@@ -192,6 +196,9 @@ impl Session {
     /// Attend et décode un paquet (au plus `timeout`).
     pub fn poll(&mut self, timeout: Duration) -> Result<Vec<Event>> {
         let Some(pkt) = self.link.recv(timeout)? else { return Ok(Vec::new()) };
+        if log::log_enabled!(log::Level::Debug) && !pkt.starts_with(&protocol::WX_PREFIX) {
+            log::debug!("reçu {} octets : {}", pkt.len(), hex(&pkt[..pkt.len().min(48)]));
+        }
         let events = protocol::decode(&pkt, self.motion_dev);
         for e in &events {
             if let Event::RhidAnnounce { dev, service } = e {
@@ -217,6 +224,10 @@ impl Session {
         }
         sleep(secs(self.cfg.close_pause_s));
     }
+}
+
+fn hex(b: &[u8]) -> String {
+    b.iter().map(|c| format!("{c:02x}")).collect()
 }
 
 /// Délai avant la prochaine tentative de connexion.

@@ -71,6 +71,11 @@ fn bt_loop(hub: Arc<Hub>) {
                 break None;
             }
             let wait = if s.place == Some(Place::Case) { s.cfg.bluetooth.relaunch_case_s } else { s.cfg.bluetooth.relaunch_s };
+            // relances sans effet : on rouvre le canal (sans couper la liaison Bluetooth ni l'audio)
+            let reopen = s.cfg.bluetooth.reopen_after_s;
+            if reopen > 0.0 && s.place != Some(Place::Case) && now - last_motion > reopen {
+                break Some(format!("pas de données depuis {:.0} s : réouverture du canal", now - last_motion));
+            }
             let restart = std::mem::take(&mut s.restart_stream);
             if restart || (now - last_motion > wait && now - last_start > wait) {
                 if !restart {

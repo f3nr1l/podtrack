@@ -1245,6 +1245,7 @@ fn label_for(path: &str) -> Option<&'static str> {
         "/bluetooth/gyro_dps_per_lsb" => "Échelle du gyroscope (°/s par unité)",
         "/bluetooth/relaunch_s" => "Relance du flux sans données (s)",
         "/bluetooth/relaunch_case_s" => "Relance dans le boîtier (s)",
+        "/bluetooth/reopen_after_s" => "Réouverture du canal sans données (s, 0 = jamais)",
         "/bluetooth/reconnect_min_s" => "Reconnexion : premier délai (s)",
         "/bluetooth/reconnect_max_s" => "Reconnexion : délai maximal (s)",
         "/bluetooth/stem_events" => "Recevoir les appuis sur la tige",
