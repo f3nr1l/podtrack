@@ -426,16 +426,87 @@ fn profile_group(sh: &Sh, overlay: &adw::ToastOverlay, id: &str, title: &str, p:
     g
 }
 
+/// Identifiant court tiré d'un nom (lettres, chiffres, tirets).
+fn slug(name: &str) -> String {
+    let s: String = name.to_lowercase().chars().map(|c| if c.is_ascii_alphanumeric() { c } else { '-' }).collect();
+    let s = s.split('-').filter(|p| !p.is_empty()).collect::<Vec<_>>().join("-");
+    if s.is_empty() { "jeu".into() } else { s.chars().take(40).collect() }
+}
+
+fn add_games_group(sh: &Sh, overlay: &adw::ToastOverlay, cfg: &Config) -> adw::PreferencesGroup {
+    let g = adw::PreferencesGroup::builder()
+        .title("Ajouter un jeu")
+        .description("Jeu Steam sous Proton, ou préfixe Wine hors Steam (lug-helper, Lutris…). Rouvre la fenêtre pour voir le jeu ajouté.")
+        .build();
+    let steam: Vec<crate::steam::SteamGame> = crate::steam::installed(&cfg.steam)
+        .into_values()
+        .filter(|s| s.prefix.is_some() && !cfg.games.values().any(|g| matches!(&g.kind, GameKind::Steam { appid, .. } if *appid == s.appid)))
+        .collect();
+    let names: Vec<String> = steam.iter().map(|s| format!("{}{}", s.name, if s.flatpak { " (Flatpak)" } else { "" })).collect();
+    let model = gtk::StringList::new(&names.iter().map(String::as_str).collect::<Vec<_>>());
+    let row = adw::ComboRow::builder().title("Jeu Steam").subtitle(if steam.is_empty() { "aucun jeu Proton nouveau" } else { "" }).model(&model).build();
+    let add = gtk::Button::builder().label("Ajouter").valign(gtk::Align::Center).sensitive(!steam.is_empty()).build();
+    row.add_suffix(&add);
+    g.add(&row);
+    {
+        let (sh, o, row) = (sh.clone(), overlay.clone(), row.clone());
+        add.connect_clicked(move |_| {
+            let Some(sg) = steam.get(row.selected() as usize).cloned() else { return };
+            let id = slug(&sg.name);
+            let name = sg.name.clone();
+            let res = edit_cfg(&sh, move |c| {
+                let id = if c.games.contains_key(&id) { format!("{id}-{}", sg.appid) } else { id };
+                c.games.insert(id, config::Game { name: sg.name, kind: GameKind::Steam { appid: sg.appid, flatpak: sg.flatpak }, enabled: false, tracker: TrackerChoice::Other, profile: Default::default() });
+                Ok(())
+            });
+            match res {
+                Ok(()) => toast(&o, &format!("{name} ajouté : active « Suivi par les AirPods » après avoir rouvert la fenêtre")),
+                Err(e) => toast(&o, &format!("{e:#}")),
+            }
+        });
+    }
+    let wine = adw::ActionRow::builder().title("Préfixe Wine").subtitle("dossier qui contient user.reg et drive_c").build();
+    let pick = gtk::Button::builder().label("Choisir…").valign(gtk::Align::Center).build();
+    wine.add_suffix(&pick);
+    g.add(&wine);
+    {
+        let (sh, o) = (sh.clone(), overlay.clone());
+        pick.connect_clicked(move |b| {
+            let dlg = gtk::FileDialog::builder().title("Préfixe Wine du jeu").modal(true).build();
+            let (sh, o) = (sh.clone(), o.clone());
+            let win = b.root().and_downcast::<gtk::Window>();
+            dlg.select_folder(win.as_ref(), gtk::gio::Cancellable::NONE, move |res| {
+                let Ok(folder) = res else { return };
+                let Some(path) = folder.path() else { return };
+                if !path.join("user.reg").is_file() {
+                    toast(&o, &format!("{} n'est pas un préfixe Wine (pas de user.reg)", path.display()));
+                    return;
+                }
+                let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or("jeu".into());
+                let id = slug(&name);
+                let res = edit_cfg(&sh, move |c| {
+                    let mut id = id;
+                    while c.games.contains_key(&id) {
+                        id.push('-');
+                        id.push('2');
+                    }
+                    c.games.insert(id, config::Game { name, kind: GameKind::Wine { prefix: path }, enabled: false, tracker: TrackerChoice::Other, profile: Default::default() });
+                    Ok(())
+                });
+                match res {
+                    Ok(()) => toast(&o, "Préfixe ajouté : rouvre la fenêtre pour l'activer"),
+                    Err(e) => toast(&o, &format!("{e:#}")),
+                }
+            });
+        });
+    }
+    g
+}
+
 fn games_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
     let page = adw::PreferencesPage::new();
     let cfg = config::load(&sh.borrow().cfg_path).unwrap_or_default();
-    if cfg.games.is_empty() {
-        let g = adw::PreferencesGroup::builder()
-            .title("Aucun jeu")
-            .description("Ajoute un jeu : « podtrack game add-wine <id> <nom> <préfixe> » ou « podtrack game add-steam <id> <appid> ».")
-            .build();
-        page.add(&g);
-    }
+    page.add(&add_games_group(sh, overlay, &cfg));
     for (id, game) in &cfg.games {
         let where_ = match &game.kind {
             GameKind::Wine { prefix } => format!("Wine : {}", prefix.display()),
@@ -468,6 +539,24 @@ fn games_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
             });
         }
         g.add(&sw);
+        let rm = adw::ButtonRow::builder().title("Retirer de la liste").build();
+        rm.add_css_class("destructive-action");
+        {
+            let (sh, o, id, name) = (sh.clone(), overlay.clone(), id.clone(), game.name.clone());
+            rm.connect_activated(move |_| {
+                // d'abord rendre la main au traqueur d'origine, puis retirer
+                if let Err(e) = dbus::call::<String>("SetTracker", &(id.as_str(), "other")) {
+                    toast(&o, &format!("{e:#}"));
+                    return;
+                }
+                let id2 = id.clone();
+                match edit_cfg(&sh, move |c| { c.games.remove(&id2); Ok(()) }) {
+                    Ok(()) => toast(&o, &format!("{name} retiré (rouvre la fenêtre)")),
+                    Err(e) => toast(&o, &format!("{e:#}")),
+                }
+            });
+        }
+        g.add(&rm);
         page.add(&g);
         page.add(&profile_group(sh, overlay, id, &format!("{} — réponse", game.name), &game.profile));
     }
