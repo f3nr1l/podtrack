@@ -2,6 +2,7 @@
 
 pub mod calibration;
 pub mod engine;
+pub mod mouse;
 pub mod filter;
 pub mod pose;
 pub mod profile;

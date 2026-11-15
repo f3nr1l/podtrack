@@ -5,6 +5,8 @@ use anyhow::{Context, Result};
 use podtrack_bt::session::BtConfig;
 use podtrack_core::calibration::{DeviceCalibConfig, GameCalibConfig};
 use podtrack_core::engine::{DeviceProfile, EngineConfig};
+use podtrack_core::mouse::MouseConfig;
+use podtrack_out::uinput::JoystickConfig;
 use podtrack_core::profile::{Baseline, GameProfile};
 use podtrack_core::tracker::TrackerConfig;
 use serde::{Deserialize, Serialize};
@@ -147,11 +149,13 @@ impl Default for SteamConfig {
 pub struct PlaceConfig {
     /// Un changement oreille / boîtier / main doit durer ce délai pour être pris en compte (s).
     pub debounce_s: f64,
+    /// Fréquence de la détection d'un jeu en cours (s).
+    pub game_scan_s: f64,
 }
 
 impl Default for PlaceConfig {
     fn default() -> Self {
-        Self { debounce_s: 3.0 }
+        Self { debounce_s: 3.0, game_scan_s: 2.0 }
     }
 }
 
@@ -177,6 +181,10 @@ pub struct Config {
     pub tracker: TrackerConfig,
     pub output: OutputConfig,
     pub opentrack: OpentrackConfig,
+    /// Manette virtuelle « tête » (jeux Linux natifs).
+    pub joystick: JoystickConfig,
+    /// Souris par la tête.
+    pub mouse: MouseConfig,
     pub bridge: BridgeConfig,
     pub steam: SteamConfig,
     pub place: PlaceConfig,

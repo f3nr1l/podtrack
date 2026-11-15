@@ -10,3 +10,5 @@ podtrack-core.workspace = true
 anyhow.workspace = true
 libc.workspace = true
 memmap2.workspace = true
+evdev = "0.13"
+serde.workspace = true

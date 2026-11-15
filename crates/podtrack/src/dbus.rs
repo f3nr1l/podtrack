@@ -46,6 +46,11 @@ impl Api {
         a
     }
 
+    /// Commande nommée : left_click, toggle_scroll, toggle_mouse, recenter…
+    fn command(&self, cmd: &str) {
+        self.hub.lock().command(cmd);
+    }
+
     fn quit(&self) {
         self.hub.lock().quit = true;
         self.hub.notify();

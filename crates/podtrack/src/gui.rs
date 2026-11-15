@@ -403,7 +403,7 @@ fn profile_group(sh: &Sh, overlay: &adw::ToastOverlay, id: &str, title: &str, p:
     for (i, (name, label)) in [("yaw", "Gauche / droite (lacet)"), ("pitch", "Haut / bas (tangage)"), ("roll", "Inclinaison (roulis)")].into_iter().enumerate() {
         g.add(&axis_editor(sh, overlay, id, name, label, p.axes.get(i), i));
     }
-    let smoothing = spin("Lissage", "filtre 1€ : 0 = aucun, 0,3 ≈ 2,5 Hz, 1 = très lisse", 0.0, 1.0, 0.05, 2, p.smoothing);
+    let smoothing = spin("Lissage", "filtre « One Euro » (Casiez 2012), lisse à l'arrêt, réactif en mouvement : 0 = aucun, 0,3 ≈ 2,5 Hz, 1 = très lisse", 0.0, 1.0, 0.05, 2, p.smoothing);
     let lowpass = spin("Passe-bas (Hz)", "filtre supplémentaire ; 0 = aucun", 0.0, 100.0, 0.5, 1, p.lowpass_hz);
     g.add(&smoothing);
     g.add(&lowpass);
@@ -785,6 +785,54 @@ fn outputs_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
         });
     }
     page.add(&profile_group(sh, overlay, "opentrack", "opentrack — réponse", &cfg.opentrack.profile));
+
+    // souris par la tête
+    let gm = adw::PreferencesGroup::builder()
+        .title("Souris par la tête")
+        .description("Mode souris : la vitesse de la tête déplace le curseur. Mode pointeur : la direction visée donne la position. En pause automatiquement pendant un jeu suivi (réglable dans Avancé).")
+        .build();
+    let mon = adw::SwitchRow::builder().title("Activer").active(cfg.mouse.enabled).build();
+    let modes = gtk::StringList::new(&["Souris (relatif)", "Pointeur (absolu)"]);
+    let mode = adw::ComboRow::builder().title("Mode").model(&modes).selected(if cfg.mouse.mode == podtrack_core::mouse::Mode::Pointeur { 1 } else { 0 }).build();
+    let sx = spin("Sensibilité horizontale", "", 0.1, 10.0, 0.1, 2, cfg.mouse.sensitivity_x);
+    let sy = spin("Sensibilité verticale", "", 0.1, 10.0, 0.1, 2, cfg.mouse.sensitivity_y);
+    let stem = adw::SwitchRow::builder().title("Clics par la tige").subtitle("simple = clic gauche, double = droit, triple = défilement, long = pause (Avancé pour changer)").active(cfg.bluetooth.stem_events).build();
+    for w in [mon.upcast_ref::<gtk::Widget>(), mode.upcast_ref(), sx.upcast_ref(), sy.upcast_ref(), stem.upcast_ref()] {
+        gm.add(w);
+    }
+    page.add(&gm);
+    {
+        let (sh, o) = (sh.clone(), overlay.clone());
+        mon.connect_active_notify(move |r| { let v = r.is_active(); if let Err(e) = edit_cfg(&sh, move |c| { c.mouse.enabled = v; Ok(()) }) { toast(&o, &format!("{e:#}")) } });
+    }
+    {
+        let (sh, o) = (sh.clone(), overlay.clone());
+        mode.connect_selected_notify(move |r| {
+            let v = if r.selected() == 1 { podtrack_core::mouse::Mode::Pointeur } else { podtrack_core::mouse::Mode::Souris };
+            if let Err(e) = edit_cfg(&sh, move |c| { c.mouse.mode = v; Ok(()) }) { toast(&o, &format!("{e:#}")) }
+        });
+    }
+    for (r, x) in [(sx, true), (sy, false)] {
+        let (sh, o) = (sh.clone(), overlay.clone());
+        r.connect_value_notify(move |r| { let v = r.value(); if let Err(e) = edit_cfg(&sh, move |c| { if x { c.mouse.sensitivity_x = v } else { c.mouse.sensitivity_y = v } Ok(()) }) { toast(&o, &format!("{e:#}")) } });
+    }
+    {
+        let (sh, o) = (sh.clone(), overlay.clone());
+        stem.connect_active_notify(move |r| { let v = r.is_active(); if let Err(e) = edit_cfg(&sh, move |c| { c.bluetooth.stem_events = v; Ok(()) }) { toast(&o, &format!("{e:#}")) } else { toast(&o, "Pris en compte à la prochaine connexion des AirPods") } });
+    }
+
+    // manette virtuelle
+    let gj = adw::PreferencesGroup::builder()
+        .title("Manette virtuelle")
+        .description("Pour les jeux Linux natifs qui lient la caméra à des axes de manette (Euro Truck Simulator 2, War Thunder…) : lacet, tangage et roulis sur RX, RY et RZ. Attention : comme toute manette ajoutée, elle peut décaler la numérotation des manettes dans un jeu (Star Citizen…).")
+        .build();
+    let jon = adw::SwitchRow::builder().title("Activer").active(cfg.joystick.enabled).build();
+    gj.add(&jon);
+    page.add(&gj);
+    {
+        let (sh, o) = (sh.clone(), overlay.clone());
+        jon.connect_active_notify(move |r| { let v = r.is_active(); if let Err(e) = edit_cfg(&sh, move |c| { c.joystick.enabled = v; Ok(()) }) { toast(&o, &format!("{e:#}")) } });
+    }
     page.upcast()
 }
 
@@ -940,7 +988,9 @@ fn label_for(path: &str) -> Option<&'static str> {
     })
 }
 
-const ADVANCED: [(&str, &str); 9] = [
+const ADVANCED: [(&str, &str); 11] = [
+    ("mouse", "Souris par la tête"),
+    ("joystick", "Manette virtuelle"),
     ("bluetooth", "Bluetooth"),
     ("engine", "Moteur de mouvement"),
     ("tracker", "Orientation de la tête"),

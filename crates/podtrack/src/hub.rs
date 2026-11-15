@@ -4,12 +4,14 @@
 use crate::config::{self, Config, TrackerChoice};
 use podtrack_core::calibration::{DeviceCalibState, DeviceCalibration, GameCalibState, GameCalibration};
 use podtrack_core::engine::{MotionEngine, SampleClock};
+use podtrack_core::mouse::{MouseEngine, MouseOut};
 use podtrack_core::profile::ProfileFilter;
 use podtrack_core::protocol::{self, BatteryPart, Event, Place, Sample, Stem};
 use podtrack_core::tracker::{HeadTracker, Pose6, Used};
 use podtrack_core::vec::V3;
 use podtrack_out::posefile::{self, PoseFile};
 use podtrack_out::udp::OpentrackSender;
+use podtrack_out::uinput::{VirtualJoystick, VirtualMouse};
 use serde::Serialize;
 use std::collections::BTreeMap;
 use std::path::PathBuf;
@@ -72,6 +74,17 @@ pub struct State {
     pub game_calib: Option<(String, GameCalibration)>,
     /// Une commande a demandé de relancer les flux (changement d'intervalle…).
     pub restart_stream: bool,
+    mouse: MouseEngine,
+    vmouse: Option<VirtualMouse>,
+    joystick: Option<VirtualJoystick>,
+    /// Un jeu suivi tourne (rafraîchi toutes les `game_scan_s`).
+    pub gaming: bool,
+    next_game_scan: f64,
+    mouse_out: Vec<MouseOut>,
+}
+
+fn cfg_mouse_placeholder() -> podtrack_core::mouse::MouseConfig {
+    Default::default()
 }
 
 pub struct Hub {
@@ -120,6 +133,12 @@ impl Hub {
             device_calib: None,
             game_calib: None,
             restart_stream: false,
+            mouse: MouseEngine::new(cfg_mouse_placeholder()),
+            vmouse: None,
+            joystick: None,
+            gaming: false,
+            next_game_scan: 0.0,
+            mouse_out: Vec::new(),
         };
         let hub = Arc::new(Hub { state: Mutex::new(state), wake: Condvar::new() });
         hub.lock().reconfigure();
@@ -147,6 +166,89 @@ impl State {
         self.apply_device_profile();
         self.configure_bridge();
         self.configure_udp();
+        self.mouse.configure(self.cfg.mouse.clone());
+        self.configure_devices();
+    }
+
+    /// Crée ou retire la souris et la manette virtuelles selon la configuration.
+    fn configure_devices(&mut self) {
+        if self.cfg.mouse.enabled && self.vmouse.is_none() {
+            match VirtualMouse::new("podtrack") {
+                Ok(m) => self.vmouse = Some(m),
+                Err(e) => self.last_error = Some(format!("souris virtuelle : {e:#} (accès à /dev/uinput ?)")),
+            }
+        } else if !self.cfg.mouse.enabled {
+            self.vmouse = None;
+        }
+        let j = &self.cfg.joystick;
+        if j.enabled && self.joystick.is_none() {
+            match VirtualJoystick::new(&j.name) {
+                Ok(d) => self.joystick = Some(d),
+                Err(e) => self.last_error = Some(format!("manette virtuelle : {e:#}")),
+            }
+        } else if !j.enabled {
+            self.joystick = None;
+        }
+    }
+
+    fn mouse_active(&self) -> bool {
+        self.active && self.cfg.mouse.enabled && !(self.cfg.mouse.pause_when_gaming && self.gaming)
+    }
+
+    /// Applique les sorties de la souris (mouvements, clics, commandes).
+    fn flush_mouse(&mut self) {
+        let outs = std::mem::take(&mut self.mouse_out);
+        for o in outs {
+            let res = match (&o, self.vmouse.as_mut()) {
+                (MouseOut::Rel(x, y), Some(m)) => m.move_rel(*x, *y),
+                (MouseOut::Abs(x, y), Some(m)) => m.move_abs(*x, *y),
+                (MouseOut::Scroll(n), Some(m)) => m.scroll(*n),
+                (MouseOut::Command(c), _) => {
+                    let c = c.clone();
+                    self.command(&c);
+                    Ok(())
+                }
+                _ => Ok(()),
+            };
+            if let Err(e) = res {
+                self.last_error = Some(format!("souris : {e:#}"));
+            }
+        }
+    }
+
+    /// Commande nommée (tige, clic par inclinaison…).
+    pub fn command(&mut self, cmd: &str) {
+        let press = self.cfg.mouse.click_press_s;
+        let r = match cmd {
+            "left_click" | "right_click" | "middle_click" => match self.vmouse.as_mut() {
+                Some(m) => m.click(cmd.trim_end_matches("_click"), press),
+                None => Ok(()),
+            },
+            "toggle_scroll" => {
+                self.mouse.scroll_mode = !self.mouse.scroll_mode;
+                Ok(())
+            }
+            "toggle_pause" | "toggle_mouse" => {
+                self.cfg.mouse.enabled = !self.cfg.mouse.enabled;
+                self.save_config().map(|_| ())
+            }
+            "toggle" => {
+                self.active = !self.active;
+                Ok(())
+            }
+            "recenter" => {
+                self.recenter();
+                Ok(())
+            }
+            "none" | "" => Ok(()),
+            other => {
+                log::warn!("commande inconnue : {other}");
+                Ok(())
+            }
+        };
+        if let Err(e) = r {
+            self.last_error = Some(format!("{cmd} : {e:#}"));
+        }
     }
 
     fn apply_device_profile(&mut self) {
@@ -268,6 +370,7 @@ impl State {
 
     pub fn recenter(&mut self) {
         self.tracker.recenter();
+        self.mouse.recenter();
         self.head = [0.0; 3];
     }
 
@@ -320,6 +423,18 @@ impl State {
         let name = k.map(|s| format!("{s:?}").to_lowercase()).unwrap_or(format!("0x{raw:02x}"));
         log::info!("pression tige : {name}");
         self.last_stem = Some(name);
+        let st = &self.cfg.mouse.stem;
+        let action = match k {
+            Some(Stem::Single) => st.single.clone(),
+            Some(Stem::Double) => st.double.clone(),
+            Some(Stem::Triple) => st.triple.clone(),
+            Some(Stem::Long) => st.long.clone(),
+            None => return,
+        };
+        // les commandes de bascule passent toujours ; les clics seulement souris active
+        if matches!(action.as_str(), "toggle_pause" | "toggle_mouse" | "toggle" | "recenter") || self.mouse_active() {
+            self.command(&action);
+        }
     }
 
     fn on_block(&mut self, blk: &[u8], now: f64) {
@@ -335,6 +450,11 @@ impl State {
         self.last_sample = Some(now);
         let rates = self.engine.step(s.w, s.g, dt);
         self.rates = rates;
+        let ma = self.mouse_active();
+        let mut outs = std::mem::take(&mut self.mouse_out);
+        self.mouse.on_rates(rates[0], rates[1], rates[2], dt, now, ma, &mut outs);
+        self.mouse_out = outs;
+        self.flush_mouse();
         self.tracker.update(rates, dt, self.engine.g, Some(self.engine.lat()), self.engine.signs(), Some(s.att), now);
         self.head = self.tracker.head;
         if let Some(c) = self.device_calib.as_mut() {
@@ -359,9 +479,25 @@ impl State {
             Some(t) => (now - t).clamp(0.0, self.cfg.output.max_dt),
         };
         self.last_tick = Some(now);
+        if now >= self.next_game_scan {
+            self.next_game_scan = now + self.cfg.place.game_scan_s.max(0.2);
+            let ids: Vec<String> = self.bridge.keys().cloned().collect();
+            self.gaming = ids.iter().any(|id| crate::games::game_running(self, id).unwrap_or(false));
+        }
+        let ma = self.mouse_active();
+        let mut outs = std::mem::take(&mut self.mouse_out);
+        self.mouse.render(now, ma, &mut outs);
+        self.mouse_out = outs;
+        self.flush_mouse();
         // arrêté ou sans données : on ne rafraîchit plus, les DLL recentrent d'elles-mêmes
         if !self.active || self.stale(now) {
             return;
+        }
+        if let Some(j) = self.joystick.as_mut() {
+            let p: Pose6 = [0.0, 0.0, 0.0, self.head[0], self.head[1], self.head[2]];
+            if let Err(e) = j.write(&p, &self.cfg.joystick) {
+                self.last_error = Some(format!("manette : {e:#}"));
+            }
         }
         let head: Pose6 = [0.0, 0.0, 0.0, self.head[0], self.head[1], self.head[2]];
         for b in self.bridge.values_mut() {
@@ -420,6 +556,9 @@ impl State {
             "games": games,
             "opentrack": self.udp.as_ref().map(|(s, _)| serde_json::json!({"sent": s.sent, "errors": s.errors})),
             "last_stem": self.last_stem,
+            "mouse": {"enabled": self.cfg.mouse.enabled, "active": self.mouse_active(), "mode": self.cfg.mouse.mode, "scroll": self.mouse.scroll_mode},
+            "joystick": self.joystick.as_ref().map(|j| j.writes),
+            "gaming": self.gaming,
             "last_error": self.last_error,
             "device_calibration": self.device_calib.as_ref().map(|c| c.state()),
             "game_calibration": self.game_calib_state().map(|(t, s)| serde_json::json!({"target": t, "state": s})),

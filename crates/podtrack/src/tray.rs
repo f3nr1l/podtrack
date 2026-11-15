@@ -44,6 +44,7 @@ struct GameLine {
 #[derive(Clone, PartialEq, Default)]
 struct Snapshot {
     active: bool,
+    mouse: bool,
     receiving: bool,
     label: String,
     device: String,
@@ -89,7 +90,7 @@ fn snapshot(hub: &Hub) -> Snapshot {
         .iter()
         .map(|(id, g)| GameLine { id: id.clone(), name: g.name.clone(), ours: g.enabled && g.tracker == TrackerChoice::Podtrack })
         .collect();
-    Snapshot { active: s.active, receiving, label, device, battery, games }
+    Snapshot { active: s.active, mouse: s.cfg.mouse.enabled, receiving, label, device, battery, games }
 }
 
 fn notify(text: &str) {
@@ -177,6 +178,18 @@ impl Tray for PodTray {
                     s.active = !s.active;
                     drop(s);
                     t.hub.notify();
+                    t.snap = snapshot(&t.hub);
+                }),
+                ..Default::default()
+            }
+            .into(),
+        );
+        m.push(
+            CheckmarkItem {
+                label: "Souris par la tête".into(),
+                checked: self.snap.mouse,
+                activate: Box::new(|t: &mut Self| {
+                    t.hub.lock().command("toggle_mouse");
                     t.snap = snapshot(&t.hub);
                 }),
                 ..Default::default()

@@ -4,6 +4,7 @@ pub mod posefile;
 pub mod procs;
 pub mod tracklist;
 pub mod udp;
+pub mod uinput;
 pub mod winereg;
 
 /// DLL TrackIR / FreeTrack fournies avec podtrack (compilées depuis MousePods `native/`).
