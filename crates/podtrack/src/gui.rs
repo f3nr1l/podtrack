@@ -890,6 +890,7 @@ fn outputs_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
         gm.add(w);
     }
     page.add(&gm);
+    page.add(&mouse_response_group(sh, overlay, &cfg.mouse.souris));
     {
         let (sh, o) = (sh.clone(), overlay.clone());
         mon.connect_active_notify(move |r| { let v = r.is_active(); if let Err(e) = edit_cfg(&sh, move |c| { c.mouse.enabled = v; Ok(()) }) { toast(&o, &format!("{e:#}")) } });
@@ -923,6 +924,120 @@ fn outputs_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
         jon.connect_active_notify(move |r| { let v = r.is_active(); if let Err(e) = edit_cfg(&sh, move |c| { c.joystick.enabled = v; Ok(()) }) { toast(&o, &format!("{e:#}")) } });
     }
     page.upcast()
+}
+
+/// Graphe vitesse de tête (°/s) → vitesse du curseur (px/s), axe x ou y.
+fn draw_mouse_curve(cr: &gtk::cairo::Context, w: f64, h: f64, c: &podtrack_core::mouse::SourisConfig, curve: f64, now: Option<f64>) {
+    use podtrack_core::mouse::cursor_speed;
+    let pad = 8.0;
+    let xmax = 120.0;
+    let ymax = cursor_speed(c, xmax, curve, 1.0).abs().max(1.0);
+    let x = |v: f64| pad + v / xmax * (w - 2.0 * pad);
+    let y = |o: f64| h - pad - o / ymax * (h - 2.0 * pad);
+    cr.set_source_rgba(0.5, 0.5, 0.5, 0.3);
+    cr.set_line_width(1.0);
+    cr.rectangle(pad, pad, w - 2.0 * pad, h - 2.0 * pad);
+    let _ = cr.stroke();
+    // référence linéaire sans accélération
+    cr.set_source_rgba(0.5, 0.5, 0.5, 0.5);
+    cr.move_to(x(0.0), y(0.0));
+    cr.line_to(x(xmax), y(xmax * c.px_per_deg));
+    let _ = cr.stroke();
+    cr.set_source_rgba(0.21, 0.52, 0.89, 1.0);
+    cr.set_line_width(2.0);
+    for i in 0..=120 {
+        let v = xmax * i as f64 / 120.0;
+        let o = cursor_speed(c, v, curve, 1.0).abs();
+        if i == 0 { cr.move_to(x(v), y(o)) } else { cr.line_to(x(v), y(o)) }
+    }
+    let _ = cr.stroke();
+    if let Some(v) = now {
+        let v = v.abs().min(xmax);
+        cr.set_source_rgba(0.95, 0.62, 0.1, 1.0);
+        cr.arc(x(v), y(cursor_speed(c, v, curve, 1.0).abs()), 5.0, 0.0, std::f64::consts::TAU);
+        let _ = cr.fill();
+    }
+}
+
+fn mouse_response_group(sh: &Sh, overlay: &adw::ToastOverlay, c0: &podtrack_core::mouse::SourisConfig) -> adw::PreferencesGroup {
+    let g = adw::PreferencesGroup::builder()
+        .title("Souris — réponse")
+        .description("Graphe : vitesse de la tête (°/s, en abscisse jusqu'à 120) → vitesse du curseur. Ligne grise : réponse linéaire sans accélération. Point orange : mouvement en cours.")
+        .build();
+    let cur = Rc::new(RefCell::new(c0.clone()));
+    let accel_on = adw::SwitchRow::builder().title("Accélération").subtitle("plus la tête tourne vite, plus le curseur va loin").active(c0.acceleration_enabled).build();
+    let accel = spin("Intensité de l'accélération", "", 0.0, 5.0, 0.1, 2, c0.acceleration);
+    let gain = spin("Gain (px par degré)", "", 1.0, 200.0, 1.0, 1, c0.px_per_deg);
+    let dz = spin("Zone morte (°/s)", "vitesse de tête ignorée (tremblements)", 0.0, 30.0, 0.5, 1, c0.rate_deadzone_dps);
+    let refv = spin("Vitesse de référence des courbes (°/s)", "à cette vitesse, la courbe rejoint la ligne droite", 1.0, 200.0, 1.0, 0, c0.curve_ref_dps);
+    for w in [accel_on.upcast_ref::<gtk::Widget>(), accel.upcast_ref(), gain.upcast_ref(), dz.upcast_ref(), refv.upcast_ref()] {
+        g.add(w);
+    }
+    let mut areas = Vec::new();
+    let mut curves = Vec::new();
+    for (i, (label, value)) in [("Courbe horizontale", c0.curve_x), ("Courbe verticale", c0.curve_y)].into_iter().enumerate() {
+        let exp = adw::ExpanderRow::builder().title(label).subtitle(format!("exposant {value:.2}")).build();
+        let area = gtk::DrawingArea::builder().content_height(140).margin_top(6).margin_bottom(6).margin_start(12).margin_end(12).build();
+        {
+            let (cur, sh2) = (cur.clone(), sh.clone());
+            area.set_draw_func(move |_, cr, w, h| {
+                let c = cur.borrow();
+                let curve = if i == 0 { c.curve_x } else { c.curve_y };
+                let now = sh2.borrow().status["rates"].get(i).and_then(Value::as_f64);
+                draw_mouse_curve(cr, w as f64, h as f64, &c, curve, now);
+            });
+        }
+        exp.add_row(&gtk::ListBoxRow::builder().child(&area).activatable(false).build());
+        let c = spin("Exposant", "1 = linéaire ; plus grand = petits mouvements plus précis", 0.3, 3.0, 0.05, 2, value);
+        exp.add_row(&c);
+        g.add(&exp);
+        areas.push(area);
+        curves.push((c, exp));
+    }
+    {
+        let areas = areas.clone();
+        glib::timeout_add_local(Duration::from_millis(100), move || {
+            for a in &areas {
+                a.queue_draw();
+            }
+            glib::ControlFlow::Continue
+        });
+    }
+    let save = {
+        let (sh, o, cur) = (sh.clone(), overlay.clone(), cur.clone());
+        let (accel_on, accel, gain, dz, refv) = (accel_on.clone(), accel.clone(), gain.clone(), dz.clone(), refv.clone());
+        let curves: Vec<(adw::SpinRow, adw::ExpanderRow)> = curves.clone();
+        Rc::new(move || {
+            let c = {
+                let mut c = cur.borrow_mut();
+                c.acceleration_enabled = accel_on.is_active();
+                c.acceleration = accel.value();
+                c.px_per_deg = gain.value();
+                c.rate_deadzone_dps = dz.value();
+                c.curve_ref_dps = refv.value();
+                c.curve_x = curves[0].0.value();
+                c.curve_y = curves[1].0.value();
+                for (sp, ex) in &curves {
+                    ex.set_subtitle(&format!("exposant {:.2}", sp.value()));
+                }
+                c.clone()
+            };
+            accel.set_sensitive(c.acceleration_enabled);
+            if let Err(e) = edit_cfg(&sh, move |cfg| { cfg.mouse.souris = c; Ok(()) }) {
+                toast(&o, &format!("{e:#}"));
+            }
+        })
+    };
+    accel.set_sensitive(c0.acceleration_enabled);
+    {
+        let save = save.clone();
+        accel_on.connect_active_notify(move |_| save());
+    }
+    for r in [&accel, &gain, &dz, &refv, &curves[0].0, &curves[1].0] {
+        let save = save.clone();
+        r.connect_value_notify(move |_| save());
+    }
+    g
 }
 
 // ----------------------------------------------------------------------------------- Raccourcis

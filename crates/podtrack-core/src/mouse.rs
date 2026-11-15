@@ -21,7 +21,15 @@ pub enum Mode {
 #[serde(default)]
 pub struct SourisConfig {
     pub px_per_deg: f64,
+    /// Accélération : plus la tête tourne vite, plus le gain augmente.
+    pub acceleration_enabled: bool,
     pub acceleration: f64,
+    /// Courbes de réponse horizontale et verticale : vitesse de sortie = réf · (v / réf)^courbe.
+    /// 1 = linéaire ; plus grand = petits mouvements plus précis, grands plus rapides.
+    pub curve_x: f64,
+    pub curve_y: f64,
+    /// Vitesse de tête (°/s) où la courbe vaut la ligne droite.
+    pub curve_ref_dps: f64,
     /// Vitesse de référence de l'accélération (°/s) et plafond du facteur.
     pub accel_ref_dps: f64,
     pub accel_cap: f64,
@@ -33,7 +41,7 @@ pub struct SourisConfig {
 
 impl Default for SourisConfig {
     fn default() -> Self {
-        Self { px_per_deg: 20.0, acceleration: 1.0, accel_ref_dps: 60.0, accel_cap: 2.5, rate_deadzone_dps: 2.5, coast_s: 0.08, fade_s: 0.1 }
+        Self { px_per_deg: 20.0, acceleration_enabled: true, acceleration: 1.0, curve_x: 1.0, curve_y: 1.0, curve_ref_dps: 30.0, accel_ref_dps: 60.0, accel_cap: 2.5, rate_deadzone_dps: 2.5, coast_s: 0.08, fade_s: 0.1 }
     }
 }
 
@@ -178,6 +186,23 @@ pub enum MouseOut {
     Command(String),
 }
 
+/// Courbe de réponse de la souris appliquée à une vitesse (°/s), signe conservé.
+#[inline]
+pub fn shape_rate(v: f64, curve: f64, reference: f64) -> f64 {
+    if curve == 1.0 || v == 0.0 || reference <= 0.0 {
+        return v;
+    }
+    (reference * (v.abs() / reference).powf(curve)).copysign(v)
+}
+
+/// Vitesse du curseur (px/s) pour une vitesse de tête (°/s), axe x ou y, sans inversion :
+/// zone morte, courbe, gain et accélération (sur cet axe seul). Sert au graphe de la fenêtre.
+pub fn cursor_speed(c: &SourisConfig, v: f64, curve: f64, sensitivity: f64) -> f64 {
+    let s = shape_rate(soft_deadzone(v, c.rate_deadzone_dps), curve, c.curve_ref_dps);
+    let accel = if c.acceleration_enabled { c.acceleration * (s.abs() / c.accel_ref_dps.max(1e-6)).min(c.accel_cap) } else { 0.0 };
+    s * c.px_per_deg * (1.0 + accel) * sensitivity
+}
+
 #[inline]
 pub fn soft_deadzone(v: f64, dz: f64) -> f64 {
     if v.abs() <= dz { 0.0 } else { (v.abs() - dz).copysign(v) }
@@ -303,10 +328,11 @@ impl MouseEngine {
         match c.mode {
             Mode::Souris => {
                 let s = &c.souris;
-                let vy = soft_deadzone(yaw_f, s.rate_deadzone_dps);
-                let vp = soft_deadzone(pitch_f, s.rate_deadzone_dps);
+                let vy = shape_rate(soft_deadzone(yaw_f, s.rate_deadzone_dps), s.curve_x, s.curve_ref_dps);
+                let vp = shape_rate(soft_deadzone(pitch_f, s.rate_deadzone_dps), s.curve_y, s.curve_ref_dps);
                 let speed = vy.hypot(vp);
-                let gain = s.px_per_deg * (1.0 + s.acceleration * (speed / s.accel_ref_dps.max(1e-6)).min(s.accel_cap));
+                let accel = if s.acceleration_enabled { s.acceleration * (speed / s.accel_ref_dps.max(1e-6)).min(s.accel_cap) } else { 0.0 };
+                let gain = s.px_per_deg * (1.0 + accel);
                 self.vel = (ix * vy * gain * c.sensitivity_x, -iy * vp * gain * c.sensitivity_y);
             }
             Mode::Pointeur => {
@@ -440,6 +466,18 @@ mod tests {
             _ => a,
         });
         assert!(dx > 100.0 && dy < -20.0, "{dx} {dy}");
+    }
+
+    #[test]
+    fn curve_and_no_acceleration() {
+        let c = SourisConfig { acceleration_enabled: false, ..Default::default() };
+        // sans accélération ni courbe : proportionnel
+        assert!((cursor_speed(&c, 62.5, 1.0, 1.0) - 60.0 * 20.0).abs() < 1e-9);
+        // courbe 2 : sous la référence plus lent, au-dessus plus rapide
+        let slow = cursor_speed(&c, 12.5, 2.0, 1.0);
+        let fast = cursor_speed(&c, 62.5, 2.0, 1.0);
+        assert!(slow < 10.0 * 20.0 && fast > 60.0 * 20.0);
+        assert_eq!(shape_rate(-10.0, 1.0, 30.0), -10.0);
     }
 
     #[test]
