@@ -5,7 +5,7 @@ use crate::config::TrackerChoice;
 use crate::hub::{Conn, Hub};
 use ksni::blocking::TrayMethods;
 use ksni::menu::{CheckmarkItem, StandardItem, SubMenu};
-use ksni::{MenuItem, ToolTip, Tray};
+use ksni::{Icon, MenuItem, ToolTip, Tray};
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
@@ -99,7 +99,36 @@ fn notify(text: &str) {
 struct PodTray {
     hub: Arc<Hub>,
     snap: Snapshot,
-    theme: Option<PathBuf>,
+    /// Icônes prêtes (actif, arrêté, recherche), en plusieurs tailles.
+    pixmaps: Vec<Vec<Icon>>,
+}
+
+/// SVG → images ARGB32 (ordre réseau) aux tailles courantes de la barre.
+fn rasterize(svg: &str) -> Vec<Icon> {
+    use gtk::gdk_pixbuf::{Pixbuf, PixbufLoader};
+    use gtk::prelude::PixbufLoaderExt;
+    let mut out = Vec::new();
+    for size in [16, 22, 24, 32, 48, 64] {
+        let loader = PixbufLoader::with_type("svg").ok();
+        let Some(loader) = loader else { continue };
+        loader.set_size(size, size);
+        if loader.write(svg.as_bytes()).is_err() || loader.close().is_err() {
+            continue;
+        }
+        let Some(pb): Option<Pixbuf> = loader.pixbuf() else { continue };
+        let Some(pb) = (if pb.has_alpha() { Some(pb) } else { pb.add_alpha(false, 0, 0, 0).ok() }) else { continue };
+        let (w, h, stride, n) = (pb.width() as usize, pb.height() as usize, pb.rowstride() as usize, pb.n_channels() as usize);
+        let px = pb.read_pixel_bytes();
+        let mut data = Vec::with_capacity(w * h * 4);
+        for y in 0..h {
+            for x in 0..w {
+                let o = y * stride + x * n;
+                data.extend_from_slice(&[px[o + 3], px[o], px[o + 1], px[o + 2]]);
+            }
+        }
+        out.push(Icon { width: w as i32, height: h as i32, data });
+    }
+    out
 }
 
 impl Tray for PodTray {
@@ -111,19 +140,15 @@ impl Tray for PodTray {
         "podtrack".into()
     }
 
-    fn icon_theme_path(&self) -> String {
-        self.theme.as_ref().map(|p| p.display().to_string()).unwrap_or_default()
-    }
-
-    fn icon_name(&self) -> String {
-        if !self.snap.active {
-            "podtrack-stopped"
+    fn icon_pixmap(&self) -> Vec<Icon> {
+        let i = if !self.snap.active {
+            1
         } else if self.snap.receiving {
-            "podtrack-active"
+            0
         } else {
-            "podtrack-searching"
-        }
-        .into()
+            2
+        };
+        self.pixmaps.get(i).cloned().unwrap_or_default()
     }
 
     fn tool_tip(&self) -> ToolTip {
@@ -223,8 +248,9 @@ pub fn open_window() {
 
 /// Affiche l'icône et la tient à jour. Sans extension AppIndicator, le démon continue sans elle.
 pub fn spawn(hub: Arc<Hub>) {
-    let theme = install_icons();
-    let tray = PodTray { snap: snapshot(&hub), hub: hub.clone(), theme };
+    install_icons();
+    let pixmaps = ICONS[..3].iter().map(|(_, svg)| rasterize(svg)).collect();
+    let tray = PodTray { snap: snapshot(&hub), hub: hub.clone(), pixmaps };
     let handle = match tray.assume_sni_available(true).spawn() {
         Ok(h) => h,
         Err(e) => {

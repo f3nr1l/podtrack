@@ -4,6 +4,8 @@ mod config;
 mod daemon;
 mod dbus;
 mod games;
+mod gui;
+mod hotkeys;
 mod hub;
 mod import;
 mod signals;
@@ -31,6 +33,14 @@ enum Cmd {
         #[arg(long)]
         no_tray: bool,
     },
+    /// Ouvre la fenêtre.
+    Gui {
+        /// Enregistre chaque page en PNG dans ce dossier puis quitte.
+        #[arg(long, hide = true)]
+        shot: Option<PathBuf>,
+    },
+    /// Écrit les raccourcis globaux de la configuration dans GNOME.
+    Hotkeys,
     /// État du démon.
     Status {
         #[arg(long)]
@@ -257,6 +267,11 @@ fn main() -> Result<()> {
         Cmd::Daemon { no_tray } => {
             let hub = hub::Hub::new(cfg_path)?;
             daemon::run(hub, !no_tray)?;
+        }
+        Cmd::Gui { shot } => gui::run(shot)?,
+        Cmd::Hotkeys => {
+            hotkeys::apply(&config::load(&cfg_path)?.hotkeys)?;
+            println!("raccourcis écrits dans GNOME");
         }
         Cmd::Status { json } => {
             let v = status()?;

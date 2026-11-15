@@ -140,6 +140,10 @@ pub fn run(hub: Arc<Hub>, with_tray: bool) -> anyhow::Result<()> {
         }
     });
     let _conn = crate::dbus::serve(hub.clone())?;
+    let hk = hub.lock().cfg.hotkeys.clone();
+    if let Err(e) = crate::hotkeys::apply(&hk) {
+        log::warn!("raccourcis non écrits : {e:#}");
+    }
     let bt = { let h = hub.clone(); std::thread::Builder::new().name("bluetooth".into()).spawn(move || bt_loop(h))? };
     let out = { let h = hub.clone(); std::thread::Builder::new().name("sorties".into()).spawn(move || out_loop(h))? };
     if with_tray {
