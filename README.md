@@ -55,9 +55,13 @@ avec une interface GNOME, des courbes de réponse par jeu et la gestion des jeux
 ### Paquet RPM (Fedora)
 
 ```sh
-sudo dnf install ./podtrack-*.rpm
+packaging/rpm/build-rpm.sh          # ajouter --dll pour recompiler aussi les DLL Windows
+sudo dnf install ./target/rpm/RPMS/x86_64/podtrack-*.rpm
 systemctl --user enable --now podtrack.service
 ```
+
+Le paquet installe `/usr/bin/podtrack`, le service utilisateur `podtrack.service`, l'entrée de
+bureau et l'icône.
 
 ### Flatpak
 
