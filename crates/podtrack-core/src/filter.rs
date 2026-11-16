@@ -86,6 +86,47 @@ impl LowPass {
     }
 }
 
+/// Prolonge la pose entre deux paquets Bluetooth : les échantillons arrivent groupés, la
+/// pose resterait figée entre deux paquets puis sauterait. On poursuit le mouvement à la
+/// vitesse mesurée (lissée), pendant au plus `max_s` après le dernier échantillon.
+#[derive(Debug, Clone, Default)]
+pub struct Extrapolator {
+    last: Option<crate::vec::V3>,
+    vel: crate::vec::V3,
+    t_last: f64,
+}
+
+impl Extrapolator {
+    /// Nouvel échantillon `head` (°), `dt` d'horloge capteur (s), reçu à `now` (s).
+    /// `alpha` : poids de la nouvelle vitesse (0..1). Un écart de plus de `jump_deg` entre deux
+    /// échantillons (recentrage, réinitialisation de fusion) remet la vitesse à zéro.
+    pub fn update(&mut self, head: crate::vec::V3, dt: f64, now: f64, alpha: f64, jump_deg: f64) {
+        if let Some(prev) = self.last {
+            let d = [0, 1, 2].map(|i| crate::vec::wrap180(head[i] - prev[i]));
+            if d.iter().any(|x| x.abs() > jump_deg) {
+                self.vel = [0.0; 3];
+            } else if dt > 0.0 {
+                for i in 0..3 {
+                    self.vel[i] += alpha.clamp(0.0, 1.0) * (d[i] / dt - self.vel[i]);
+                }
+            }
+        }
+        self.last = Some(head);
+        self.t_last = now;
+    }
+
+    /// Pose prolongée à `now` ; la dernière pose telle quelle si `max_s` ≤ 0.
+    pub fn predict(&self, now: f64, max_s: f64) -> Option<crate::vec::V3> {
+        let h = self.last?;
+        let age = (now - self.t_last).clamp(0.0, max_s.max(0.0));
+        Some([0, 1, 2].map(|i| h[i] + self.vel[i] * age))
+    }
+
+    pub fn reset(&mut self) {
+        *self = Self::default();
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -107,5 +148,19 @@ mod tests {
             y = f.apply(1.0, 0.01);
         }
         assert!((y - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn extrapolator_continues_motion_and_caps() {
+        let mut e = Extrapolator::default();
+        e.update([0.0, 0.0, 0.0], 0.01, 1.00, 1.0, 20.0);
+        e.update([1.0, -0.5, 0.0], 0.01, 1.01, 1.0, 20.0); // 100 °/s en lacet
+        let p = e.predict(1.02, 0.05).unwrap();
+        assert!((p[0] - 2.0).abs() < 1e-9 && (p[1] + 1.0).abs() < 1e-9);
+        let capped = e.predict(2.0, 0.05).unwrap();
+        assert!((capped[0] - 6.0).abs() < 1e-9);
+        assert_eq!(e.predict(1.5, 0.0).unwrap()[0], 1.0);
+        e.update([40.0, 0.0, 0.0], 0.01, 1.02, 1.0, 20.0); // saut : vitesse oubliée
+        assert_eq!(e.predict(1.05, 0.05).unwrap()[0], 40.0);
     }
 }

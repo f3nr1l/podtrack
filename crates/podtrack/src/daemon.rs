@@ -154,6 +154,40 @@ fn out_loop(hub: Arc<Hub>) {
     }
 }
 
+/// Profil audio actif des AirPods `address`, lu par `pactl` (PipeWire ou PulseAudio).
+fn audio_profile(address: &str) -> Option<String> {
+    let out = crate::sandbox::host("pactl").args(["-f", "json", "list", "cards"]).output().ok()?;
+    let cards: serde_json::Value = serde_json::from_slice(&out.stdout).ok()?;
+    let key = address.replace(':', "_").to_ascii_uppercase();
+    cards.as_array()?.iter().find(|c| c["name"].as_str().is_some_and(|n| n.to_ascii_uppercase().contains(&key)))?["active_profile"].as_str().map(str::to_string)
+}
+
+/// Surveille le profil audio : en mains libres, les capteurs tombent à quelques dizaines de Hz.
+fn audio_loop(hub: Arc<Hub>) {
+    loop {
+        let (address, cfg, quit) = {
+            let s = hub.lock();
+            (s.device.as_ref().map(|d| d.address.clone()), s.cfg.audio.clone(), s.quit)
+        };
+        if quit {
+            return;
+        }
+        if cfg.check_s <= 0.0 {
+            std::thread::sleep(Duration::from_secs(5));
+            continue;
+        }
+        let hf = address.and_then(|a| audio_profile(&a)).map(|p| cfg.handsfree_profiles.iter().any(|h| p.starts_with(h.as_str())));
+        {
+            let mut s = hub.lock();
+            if hf == Some(true) && s.handsfree != Some(true) {
+                log::warn!("AirPods en profil mains libres : débit des capteurs fortement réduit");
+            }
+            s.handsfree = hf;
+        }
+        std::thread::sleep(Duration::from_secs_f64(cfg.check_s.max(0.5)));
+    }
+}
+
 pub fn run(hub: Arc<Hub>, with_tray: bool) -> anyhow::Result<()> {
     // avant tout autre fil : ils héritent du masque, seul le fil dédié reçoit les signaux
     crate::signals::on_terminate({
@@ -170,6 +204,7 @@ pub fn run(hub: Arc<Hub>, with_tray: bool) -> anyhow::Result<()> {
     }
     let bt = { let h = hub.clone(); std::thread::Builder::new().name("bluetooth".into()).spawn(move || bt_loop(h))? };
     let out = { let h = hub.clone(); std::thread::Builder::new().name("sorties".into()).spawn(move || out_loop(h))? };
+    { let h = hub.clone(); std::thread::Builder::new().name("audio".into()).spawn(move || audio_loop(h))?; }
     if with_tray {
         crate::tray::spawn(hub.clone());
     }

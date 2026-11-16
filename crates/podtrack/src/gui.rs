@@ -323,7 +323,8 @@ fn status_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
         bat.set_subtitle(&if b.is_empty() { "—".into() } else { b.join(" · ") });
         let calibrated = v["profile_calibrated"].as_bool() == Some(true);
         prof.set_subtitle(&format!("{}{}", v["profile"].as_str().unwrap_or("—"), if calibrated || v["profile"].is_null() { "" } else { " — non calibré : page Calibration" }));
-        rate.set_subtitle(&format!("{} Hz · source {} · biais {}", v["rate_hz"], v["source"].as_str().unwrap_or("—"), if v["bias_ok"].as_bool() == Some(true) { "estimé" } else { "en cours" }));
+        let hf = if v["handsfree"].as_bool() == Some(true) { " · mode mains libres actif (micro des AirPods) : capteurs ralentis" } else { "" };
+        rate.set_subtitle(&format!("{} Hz · source {} · biais {}{hf}", v["rate_hz"], v["source"].as_str().unwrap_or("—"), if v["bias_ok"].as_bool() == Some(true) { "estimé" } else { "en cours" }));
         err.set_subtitle(v["last_error"].as_str().unwrap_or("—"));
         let h = &v["head"];
         let head = [f(&h[0]), f(&h[1]), f(&h[2])];
@@ -1314,6 +1315,9 @@ fn label_for(path: &str) -> Option<&'static str> {
         "/tracker/lean_experimental" => "Translation estimée (expérimental)",
         "/output/shm_dir" => "Dossier de mémoire partagée",
         "/output/max_dt" => "Pas de temps max. des filtres (s)",
+        "/output/extrapolate_max_s" => "Prolongation du mouvement entre paquets, au plus (s ; 0 = aucune)",
+        "/output/extrapolate_alpha" => "Lissage de la vitesse de prolongation (0..1)",
+        "/output/extrapolate_jump_deg" => "Saut qui annule la prolongation (°)",
         "/bridge/dir_name" => "Dossier des DLL dans drive_c",
         "/bridge/games_csv" => "Liste des jeux opentrack (CSV)",
         "/bridge/dll_dir" => "Dossier des DLL à installer",
@@ -1332,6 +1336,8 @@ fn label_for(path: &str) -> Option<&'static str> {
         "/output/stale_after_s" => "Sans données depuis (s) : les jeux recentrent",
         "/bridge/dll_debug" => "Journal des DLL dans le préfixe",
         "/place/debounce_s" => "Changement oreille / boîtier pris en compte après (s)",
+        "/audio/check_s" => "Vérification du mode mains libres toutes les (s ; 0 = jamais)",
+        "/audio/handsfree_profiles" => "Profils audio mains libres (début du nom)",
         "/game_calibration/hold_s" => "Calibration par points : maintien (s)",
         "/game_calibration/still_deg" => "Calibration par points : immobilité (°)",
         "/game_calibration/min_deg" => "Calibration par points : écart minimal (°)",

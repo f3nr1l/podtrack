@@ -76,11 +76,17 @@ pub struct OutputConfig {
     pub stale_after_s: f64,
     /// Pas de temps maximal du filtre de profil (s).
     pub max_dt: f64,
+    /// Prolongation du mouvement entre deux paquets Bluetooth, au plus ce délai (s ; 0 = aucune).
+    pub extrapolate_max_s: f64,
+    /// Lissage de la vitesse servant à la prolongation : poids de la nouvelle mesure (0..1).
+    pub extrapolate_alpha: f64,
+    /// Écart entre deux échantillons au-delà duquel la prolongation repart de zéro (°).
+    pub extrapolate_jump_deg: f64,
 }
 
 impl Default for OutputConfig {
     fn default() -> Self {
-        Self { rate_hz: 120.0, shm_dir: crate::sandbox::default_shm_dir(), shm_name: "podtrack".into(), stale_after_s: 1.0, max_dt: 0.1 }
+        Self { rate_hz: 120.0, shm_dir: crate::sandbox::default_shm_dir(), shm_name: "podtrack".into(), stale_after_s: 1.0, max_dt: 0.1, extrapolate_max_s: 0.04, extrapolate_alpha: 0.3, extrapolate_jump_deg: 15.0 }
     }
 }
 
@@ -159,6 +165,23 @@ impl Default for PlaceConfig {
     }
 }
 
+/// Surveillance du son des AirPods : le profil mains libres (micro) réserve l'essentiel de la
+/// liaison Bluetooth et ralentit fortement les capteurs.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AudioConfig {
+    /// Fréquence de la vérification du profil audio (s ; 0 = jamais).
+    pub check_s: f64,
+    /// Début des noms de profils PipeWire / PulseAudio « mains libres ».
+    pub handsfree_profiles: Vec<String>,
+}
+
+impl Default for AudioConfig {
+    fn default() -> Self {
+        Self { check_s: 5.0, handsfree_profiles: vec!["headset-head-unit".into(), "handsfree".into(), "hsp".into(), "hfp".into()] }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Hotkeys {
@@ -188,6 +211,7 @@ pub struct Config {
     pub bridge: BridgeConfig,
     pub steam: SteamConfig,
     pub place: PlaceConfig,
+    pub audio: AudioConfig,
     pub hotkeys: Hotkeys,
     pub device_calibration: DeviceCalibConfig,
     pub game_calibration: GameCalibConfig,

@@ -64,6 +64,7 @@ pub struct State {
     pub rate_hz: f64,
     rate_window: Option<(f64, u64)>,
     last_sample: Option<f64>,
+    extrap: podtrack_core::filter::Extrapolator,
     pub rates: V3,
     pub head: V3,
     bridge: BTreeMap<String, BridgeGame>,
@@ -81,6 +82,8 @@ pub struct State {
     joystick: Option<VirtualJoystick>,
     /// Un jeu suivi tourne (rafraîchi toutes les `game_scan_s`).
     pub gaming: bool,
+    /// Les AirPods sont en profil audio mains libres (None : inconnu).
+    pub handsfree: Option<bool>,
     next_game_scan: f64,
     mouse_out: Vec<MouseOut>,
 }
@@ -126,6 +129,7 @@ impl Hub {
             rate_hz: 0.0,
             rate_window: None,
             last_sample: None,
+            extrap: Default::default(),
             rates: [0.0; 3],
             head: [0.0; 3],
             bridge: BTreeMap::new(),
@@ -140,6 +144,7 @@ impl Hub {
             vmouse: None,
             joystick: None,
             gaming: false,
+            handsfree: None,
             next_game_scan: 0.0,
             mouse_out: Vec::new(),
         };
@@ -375,6 +380,7 @@ impl State {
         self.tracker.recenter();
         self.mouse.recenter();
         self.head = [0.0; 3];
+        self.extrap.reset();
     }
 
     pub fn stale(&self, now: f64) -> bool {
@@ -460,6 +466,7 @@ impl State {
         self.flush_mouse();
         self.tracker.update(rates, dt, self.engine.g, Some(self.engine.lat()), self.engine.signs(), Some(s.att), now);
         self.head = self.tracker.head;
+        self.extrap.update(self.head, dt, now, self.cfg.output.extrapolate_alpha, self.cfg.output.extrapolate_jump_deg);
         if let Some(c) = self.device_calib.as_mut() {
             c.feed(now, dt, s.w, s.g);
         }
@@ -468,6 +475,7 @@ impl State {
             if c.center_reached {
                 c.center_reached = false;
                 self.tracker.recenter(); // les angles suivants partent du centre
+                self.extrap.reset();
             }
         }
     }
@@ -496,13 +504,14 @@ impl State {
         if !self.active || self.stale(now) {
             return;
         }
+        let h = self.extrap.predict(now, self.cfg.output.extrapolate_max_s).unwrap_or(self.head);
         if let Some(j) = self.joystick.as_mut() {
-            let p: Pose6 = [0.0, 0.0, 0.0, self.head[0], self.head[1], self.head[2]];
+            let p: Pose6 = [0.0, 0.0, 0.0, h[0], h[1], h[2]];
             if let Err(e) = j.write(&p, &self.cfg.joystick) {
                 self.last_error = Some(format!("manette : {e:#}"));
             }
         }
-        let head: Pose6 = [0.0, 0.0, 0.0, self.head[0], self.head[1], self.head[2]];
+        let head: Pose6 = [0.0, 0.0, 0.0, h[0], h[1], h[2]];
         for b in self.bridge.values_mut() {
             let p = b.filter.apply(head, dt);
             b.pf.write(&p, now);
@@ -562,6 +571,7 @@ impl State {
             "mouse": {"enabled": self.cfg.mouse.enabled, "active": self.mouse_active(), "mode": self.cfg.mouse.mode, "scroll": self.mouse.scroll_mode},
             "joystick": self.joystick.as_ref().map(|j| j.writes),
             "gaming": self.gaming,
+            "handsfree": self.handsfree,
             "last_error": self.last_error,
             "device_calibration": self.device_calib.as_ref().map(|c| c.state()),
             "game_calibration": self.game_calib_state().map(|(t, s)| serde_json::json!({"target": t, "state": s})),

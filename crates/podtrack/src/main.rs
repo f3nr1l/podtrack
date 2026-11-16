@@ -165,6 +165,9 @@ fn print_status(v: &serde_json::Value) {
         if v["profile_calibrated"].as_bool() == Some(true) { "" } else { "(non calibré)" }
     );
     println!("Échantillons : {} à {} Hz, source {}, biais {}", v["samples"], v["rate_hz"], v["source"].as_str().unwrap_or(""), if v["bias_ok"].as_bool() == Some(true) { "ok" } else { ".." });
+    if v["handsfree"].as_bool() == Some(true) {
+        println!("Attention    : AirPods en mode mains libres (micro) ; capteurs fortement ralentis");
+    }
     let h = &v["head"];
     println!("Tête         : lacet {:+.1}°  tangage {:+.1}°  roulis {:+.1}°", h[0].as_f64().unwrap_or(0.0), h[1].as_f64().unwrap_or(0.0), h[2].as_f64().unwrap_or(0.0));
     if let Some(g) = v["games"].as_object() {
