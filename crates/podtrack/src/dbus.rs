@@ -123,6 +123,18 @@ impl Api {
         Ok(msg)
     }
 
+    /// Décrit le résultat d'une calibration terminée, avant application.
+    fn game_calibration_preview(&self, target_side: f64, target_vert: f64) -> fdo::Result<String> {
+        let s = self.hub.lock();
+        crate::games::game_calibration_preview(&s, target_side, target_vert).map_err(err)
+    }
+
+    /// Rétablit les réglages remplacés par la dernière calibration appliquée.
+    fn game_calibration_undo(&self) -> fdo::Result<String> {
+        let mut s = self.hub.lock();
+        crate::games::undo_game_calibration(&mut s).map_err(err)
+    }
+
     fn game_calibration_cancel(&self) {
         let mut s = self.hub.lock();
         s.game_calib = None;

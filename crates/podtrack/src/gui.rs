@@ -900,10 +900,7 @@ fn calib_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
                 let s = &st[1];
                 if let Some(end) = s["end"].as_str() {
                     if end == "done" {
-                        match dbus::call::<String>("GameCalibrationApply", &(side.value(), vert.value())) {
-                            Ok(m) => toast(&o, &m),
-                            Err(e) => toast(&o, &format!("{e:#}")),
-                        }
+                        confirm_calibration(&o, side.value(), vert.value());
                     } else {
                         let _ = dbus::call::<()>("GameCalibrationCancel", &());
                         toast(&o, &format!("Calibration {} {}", if end == "cancelled" { "annulée" } else { "échouée" }, crate::texts::hint(s["hint"].as_str().unwrap_or(""))));
@@ -932,6 +929,45 @@ fn calib_page(sh: &Sh, overlay: &adw::ToastOverlay) -> gtk::Widget {
         c.baseline = None;
     }));
     page.upcast()
+}
+
+/// Montre le résultat d'une calibration terminée ; l'applique seulement si l'utilisateur le
+/// confirme, avec un bouton pour revenir aux réglages précédents.
+fn confirm_calibration(o: &adw::ToastOverlay, side: f64, vert: f64) {
+    let body = match dbus::call::<String>("GameCalibrationPreview", &(side, vert)) {
+        Ok(b) => b,
+        Err(e) => {
+            let _ = dbus::call::<()>("GameCalibrationCancel", &());
+            toast(o, &format!("{e:#}"));
+            return;
+        }
+    };
+    let dlg = adw::AlertDialog::builder().heading("Résultat de la calibration").body(body).build();
+    dlg.add_responses(&[("cancel", "Ne pas appliquer"), ("apply", "Appliquer")]);
+    dlg.set_response_appearance("apply", adw::ResponseAppearance::Suggested);
+    dlg.set_default_response(Some("apply"));
+    dlg.set_close_response("cancel");
+    let o2 = o.clone();
+    dlg.connect_response(None, move |_, r| {
+        if r != "apply" {
+            let _ = dbus::call::<()>("GameCalibrationCancel", &());
+            toast(&o2, "Calibration non appliquée");
+            return;
+        }
+        match dbus::call::<String>("GameCalibrationApply", &(side, vert)) {
+            Ok(m) => {
+                let t = adw::Toast::builder().title(glib::markup_escape_text(&m)).button_label("Revenir au précédent").timeout(10).build();
+                let o3 = o2.clone();
+                t.connect_button_clicked(move |_| match dbus::call::<String>("GameCalibrationUndo", &()) {
+                    Ok(m) => toast(&o3, &m),
+                    Err(e) => toast(&o3, &format!("{e:#}")),
+                });
+                o2.add_toast(t);
+            }
+            Err(e) => toast(&o2, &format!("{e:#}")),
+        }
+    });
+    dlg.present(Some(o));
 }
 
 // ----------------------------------------------------------------------------------- Sorties

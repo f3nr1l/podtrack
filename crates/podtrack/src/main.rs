@@ -212,8 +212,19 @@ fn calibrate_game(target: &str, side: f64, vert: f64) -> Result<()> {
         let st = &v[1];
         if let Some(end) = st["end"].as_str() {
             if end == "done" {
+                let preview: String = dbus::call("GameCalibrationPreview", &(side, vert))?;
+                print!("\n\n{preview}\nAppliquer ? [o/N] ");
+                use std::io::Write;
+                std::io::stdout().flush().ok();
+                let mut answer = String::new();
+                std::io::stdin().read_line(&mut answer)?;
+                if !matches!(answer.trim(), "o" | "O" | "oui" | "y" | "yes") {
+                    dbus::call::<()>("GameCalibrationCancel", &())?;
+                    println!("Calibration non appliquée.");
+                    return Ok(());
+                }
                 let msg: String = dbus::call("GameCalibrationApply", &(side, vert))?;
-                println!("\n{msg}");
+                println!("{msg}");
                 return Ok(());
             }
             dbus::call::<()>("GameCalibrationCancel", &())?;

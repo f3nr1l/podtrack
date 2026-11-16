@@ -89,26 +89,89 @@ pub fn set_tracker(s: &mut State, id: &str, tracker: &str) -> Result<String> {
     })
 }
 
-/// Enregistre le résultat de la calibration par points : baseline, ou amplitude d'un jeu.
-pub fn apply_game_calibration(s: &mut State, target_side: f64, target_vert: f64) -> Result<String> {
-    let Some((target, cal)) = s.game_calib.take() else { bail!("aucune calibration en cours") };
-    s.tracker_suspend_autocenter(false);
+/// Réglages remplacés par la dernière calibration appliquée, pour pouvoir y revenir.
+pub enum CalibUndo {
+    Mouse(Option<podtrack_core::mouse::AimRange>),
+    Baseline(Option<podtrack_core::profile::Baseline>),
+    Game(String, Box<podtrack_core::profile::GameProfile>),
+}
+
+/// Résultat d'une calibration terminée, sans la clore.
+fn calibration_result(s: &State, target_side: f64, target_vert: f64) -> Result<(String, podtrack_core::profile::Baseline)> {
+    let Some((target, cal)) = s.game_calib.as_ref() else { bail!("aucune calibration en cours") };
     let st = cal.state();
     if st.end != Some(End::Done) {
-        s.game_calib = Some((target, cal));
         bail!("calibration non terminée");
     }
-    let mut b = st.result.unwrap();
+    let mut b = st.result.context("calibration sans résultat")?;
     b.target_side = target_side;
     b.target_vert = target_vert;
-    let msg = if target == "mouse" {
-        s.cfg.mouse.pointeur.range = Some(podtrack_core::mouse::AimRange { x_neg: b.yaw.neg, x_pos: b.yaw.pos, y_pos: b.pitch.pos, y_neg: b.pitch.neg });
-        format!("souris (pointeur) : {:.1}/{:.1}° × {:.1}/{:.1}°", b.yaw.neg, b.yaw.pos, b.pitch.neg, b.pitch.pos)
+    Ok((target.clone(), b))
+}
+
+fn fmt_edges(neg: f64, pos: f64) -> String {
+    format!("{neg:.1}° / {pos:.1}°").replace('.', ",")
+}
+
+/// Décrit ce que changerait la calibration terminée, avant de l'appliquer.
+pub fn game_calibration_preview(s: &State, target_side: f64, target_vert: f64) -> Result<String> {
+    let (target, b) = calibration_result(s, target_side, target_vert)?;
+    let line = |name: &str, old: Option<(f64, f64)>, new: (f64, f64)| match old {
+        Some((on, op)) => {
+            let ratio = (on + op) / (new.0 + new.1).max(0.1);
+            let effet = if ratio > 1.15 {
+                format!(", caméra {ratio:.1} fois plus sensible").replace('.', ",")
+            } else if ratio < 0.87 {
+                format!(", caméra {:.1} fois moins sensible", 1.0 / ratio).replace('.', ",")
+            } else {
+                String::new()
+            };
+            format!("{name} : {} → {}{effet}", fmt_edges(on, op), fmt_edges(new.0, new.1))
+        }
+        None => format!("{name} : {}", fmt_edges(new.0, new.1)),
+    };
+    let (yaw, pitch) = ((b.yaw.neg, b.yaw.pos), (b.pitch.neg, b.pitch.pos));
+    Ok(if target == "mouse" {
+        let old = s.cfg.mouse.pointeur.range;
+        format!(
+            "Pointage absolu, angle de tête aux bords de l'écran.\n{}\n{}",
+            line("Horizontal", old.map(|r| (r.x_neg, r.x_pos)), yaw),
+            line("Vertical", old.map(|r| (r.y_neg, r.y_pos)), pitch)
+        )
     } else if target == "baseline" {
-        s.cfg.baseline = Some(b.clone());
-        format!("référence : lacet {:.1}/{:.1}°, tangage {:.1}/{:.1}°", b.yaw.neg, b.yaw.pos, b.pitch.neg, b.pitch.pos)
+        let old = s.cfg.baseline.as_ref();
+        format!(
+            "Référence d'amplitude, angle de tête aux bords de l'écran.\n{}\n{}",
+            line("Lacet", old.map(|o| (o.yaw.neg, o.yaw.pos)), yaw),
+            line("Tangage", old.map(|o| (o.pitch.neg, o.pitch.pos)), pitch)
+        )
+    } else {
+        let g = s.cfg.games.get(&target).context("jeu disparu")?;
+        let a = &g.profile.axes;
+        format!(
+            "{} : angle de tête qui amène la caméra à {target_side:.0}° (lacet) et {target_vert:.0}° (tangage).\n{}\n{}",
+            g.name,
+            line("Lacet", Some((a.yaw.edge_neg, a.yaw.edge_pos)), yaw),
+            line("Tangage", Some((a.pitch.edge_neg, a.pitch.edge_pos)), pitch)
+        )
+    })
+}
+
+/// Enregistre le résultat de la calibration par points (baseline, pointeur ou amplitude d'un
+/// jeu) et garde les réglages remplacés pour `undo_game_calibration`.
+pub fn apply_game_calibration(s: &mut State, target_side: f64, target_vert: f64) -> Result<String> {
+    let (target, b) = calibration_result(s, target_side, target_vert)?;
+    s.game_calib = None;
+    s.tracker_suspend_autocenter(false);
+    let (undo, msg) = if target == "mouse" {
+        let old = s.cfg.mouse.pointeur.range.replace(podtrack_core::mouse::AimRange { x_neg: b.yaw.neg, x_pos: b.yaw.pos, y_pos: b.pitch.pos, y_neg: b.pitch.neg });
+        (CalibUndo::Mouse(old), format!("Pointeur : {} × {}", fmt_edges(b.yaw.neg, b.yaw.pos), fmt_edges(b.pitch.neg, b.pitch.pos)))
+    } else if target == "baseline" {
+        let old = s.cfg.baseline.replace(b.clone());
+        (CalibUndo::Baseline(old), format!("Référence : lacet {}, tangage {}", fmt_edges(b.yaw.neg, b.yaw.pos), fmt_edges(b.pitch.neg, b.pitch.pos)))
     } else {
         let g = s.cfg.games.get_mut(&target).context("jeu disparu")?;
+        let old = Box::new(g.profile.clone());
         let a = &mut g.profile.axes;
         a.yaw.edge_neg = b.yaw.neg;
         a.yaw.edge_pos = b.yaw.pos;
@@ -117,7 +180,30 @@ pub fn apply_game_calibration(s: &mut State, target_side: f64, target_vert: f64)
         a.pitch.edge_pos = b.pitch.pos;
         a.pitch.target = target_vert;
         g.profile.own = true;
-        format!("{} : lacet {:.1}/{:.1}°, tangage {:.1}/{:.1}°", g.name, b.yaw.neg, b.yaw.pos, b.pitch.neg, b.pitch.pos)
+        let msg = format!("{} : lacet {}, tangage {}", g.name, fmt_edges(b.yaw.neg, b.yaw.pos), fmt_edges(b.pitch.neg, b.pitch.pos));
+        (CalibUndo::Game(target.clone(), old), msg)
+    };
+    s.save_config()?;
+    s.calib_undo = Some(undo);
+    Ok(msg)
+}
+
+/// Rétablit les réglages remplacés par la dernière calibration appliquée.
+pub fn undo_game_calibration(s: &mut State) -> Result<String> {
+    let msg = match s.calib_undo.take().context("aucune calibration à annuler")? {
+        CalibUndo::Mouse(r) => {
+            s.cfg.mouse.pointeur.range = r;
+            "Pointeur : réglage précédent rétabli".to_string()
+        }
+        CalibUndo::Baseline(b) => {
+            s.cfg.baseline = b;
+            "Référence précédente rétablie".to_string()
+        }
+        CalibUndo::Game(id, p) => {
+            let g = s.cfg.games.get_mut(&id).context("jeu disparu")?;
+            g.profile = *p;
+            format!("{} : profil précédent rétabli", g.name)
+        }
     };
     s.save_config()?;
     Ok(msg)

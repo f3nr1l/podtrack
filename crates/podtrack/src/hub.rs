@@ -72,6 +72,8 @@ pub struct State {
     pub last_error: Option<String>,
     pub device_calib: Option<DeviceCalibration>,
     pub game_calib: Option<(String, GameCalibration)>,
+    /// Réglages remplacés par la dernière calibration par points appliquée.
+    pub calib_undo: Option<crate::games::CalibUndo>,
     /// Une commande a demandé de relancer les flux (changement d'intervalle…).
     pub restart_stream: bool,
     mouse: MouseEngine,
@@ -132,6 +134,7 @@ impl Hub {
             last_error: None,
             device_calib: None,
             game_calib: None,
+            calib_undo: None,
             restart_stream: false,
             mouse: MouseEngine::new(cfg_mouse_placeholder()),
             vmouse: None,

@@ -304,6 +304,10 @@ mod imp {
         encryption_checked: bool,
         last: [f64; 6],
         frame: i32,
+        /// statistiques du journal : début de la fenêtre (ms), poses distinctes vues
+        stat_ms: u64,
+        stat_seqs: u32,
+        stat_seq: u32,
     }
 
     static NP: Mutex<Np> = Mutex::new(Np {
@@ -315,6 +319,9 @@ mod imp {
         encryption_checked: false,
         last: [0.0; 6],
         frame: 0,
+        stat_ms: 0,
+        stat_seqs: 0,
+        stat_seq: 0,
     });
 
     fn np() -> std::sync::MutexGuard<'static, Np> {
@@ -400,8 +407,21 @@ mod imp {
             let t = s.table;
             enhance(bytes, &t);
         }
-        if s.frame % 500 == 1 {
-            s.log.write("npclient", format_args!("image {} : lacet {} tangage {} roulis {}", s.frame, y, p, r));
+        if s.log.file.is_some() {
+            if s.pose.last_seq != s.stat_seq {
+                s.stat_seq = s.pose.last_seq;
+                s.stat_seqs += 1;
+            }
+            if s.frame % 500 == 1 {
+                let now = unsafe { GetTickCount64() };
+                let dt = now.saturating_sub(s.stat_ms).max(1);
+                let (calls, seqs) = (500.0 * 1000.0 / dt as f64, s.stat_seqs as f64 * 1000.0 / dt as f64);
+                s.log.write("npclient", format_args!("image {} : lacet {y:.0} tangage {p:.0} roulis {r:.0} ; {calls:.0} appels/s, {seqs:.0} poses/s", s.frame));
+                s.stat_ms = now;
+                s.stat_seqs = 0;
+            }
+        } else if s.frame == 1 {
+            s.log.write("npclient", format_args!("premier appel de NP_GetData"));
         }
         status as i32
     }

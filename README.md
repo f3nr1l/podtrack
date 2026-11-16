@@ -131,6 +131,10 @@ implémentations donne les mêmes valeurs (écart maximal de l'ordre de 1e-13).
 - `podtrack status` et `journalctl --user -u podtrack` donnent l'état et les erreurs.
 - « non calibré » : faire la calibration des axes de l'écouteur.
 - Pas de données (écouteurs dans le boîtier) : le flux est relancé automatiquement.
+- Débit des capteurs divisé par deux (environ 55 Hz au lieu de 100) : le son passe par les
+  AirPods et partage la liaison Bluetooth. Un autre périphérique audio rend le plein débit.
+- La calibration par points affiche le résultat avant de l'appliquer ; « Revenir au
+  précédent » rétablit les réglages remplacés.
 - La caméra ne bouge pas dans un jeu : vérifier dans les options du jeu que le suivi de tête
   TrackIR est activé ; l'option `bridge.dll_debug` crée un journal `C:\podtrack\npclient.log`
   dans le préfixe.
