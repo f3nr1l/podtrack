@@ -7,7 +7,7 @@ pub mod udp;
 pub mod uinput;
 pub mod winereg;
 
-/// DLL TrackIR / FreeTrack fournies avec podtrack (compilées depuis MousePods `native/`).
+/// DLL TrackIR / FreeTrack fournies avec podtrack (compilées depuis `crates/podtrack-dll` par son `build.sh`).
 pub mod bundled_dll {
     pub const NPCLIENT: &[u8] = include_bytes!("../data/dll/NPClient.dll");
     pub const NPCLIENT64: &[u8] = include_bytes!("../data/dll/NPClient64.dll");
@@ -21,5 +21,19 @@ pub mod bundled_dll {
             std::fs::write(dir.join(n), b)?;
         }
         Ok(dir.to_path_buf())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        /// Les DLL fournies doivent être celles de podtrack-dll, qui lisent `Software\podtrack` :
+        /// les anciennes DLL de MousePods lisent une autre clé et ne trouvent jamais la pose.
+        #[test]
+        fn bundled_dlls_are_podtrack_builds() {
+            let has = |b: &[u8], n: &[u8]| b.windows(n.len()).any(|w| w == n);
+            for b in [super::NPCLIENT, super::NPCLIENT64, super::FREETRACK, super::FREETRACK64] {
+                assert!(has(b, b"Software\\podtrack"), "DLL fournie sans la clé podtrack : relancer crates/podtrack-dll/build.sh");
+                assert!(!has(b, b"Software\\MousePods"), "ancienne DLL MousePods fournie");
+            }
+        }
     }
 }
