@@ -262,7 +262,12 @@ impl State {
     fn apply_device_profile(&mut self) {
         let Some(dev) = &self.device else { return };
         let src = place_source(self.place.unwrap_or(Place::Ear));
-        let key = format!("{}_{}", dev.pid, src);
+        let mut key = format!("{}_{}", dev.pid, src);
+        let head_key = format!("{}_head", dev.pid);
+        // position sans calibration propre (main, boîtier) : les axes de la tête valent mieux que rien
+        if !self.cfg.devices.contains_key(&key) && key != head_key && self.cfg.devices.contains_key(&head_key) {
+            key = head_key;
+        }
         let prof = self.cfg.devices.get(&key).cloned();
         if self.profile_key.as_deref() != Some(key.as_str()) || prof.as_ref() != Some(self.engine.profile()) {
             if prof.is_none() {
@@ -414,17 +419,22 @@ impl State {
                 self.apply_device_profile();
             }
             Some(cur) if cur == p => self.place_cand = None,
-            Some(_) => match self.place_cand {
-                Some((c, since)) if c == p => {
-                    if now - since >= self.cfg.place.debounce_s {
-                        self.place = Some(p);
-                        self.place_cand = None;
-                        self.recenter();
-                        self.apply_device_profile();
-                    }
-                }
-                _ => self.place_cand = Some((p, now)),
-            },
+            // les AirPods n'annoncent qu'un changement : le délai court ensuite sur l'horloge (place_tick)
+            Some(_) if self.place_cand.map(|c| c.0) != Some(p) => self.place_cand = Some((p, now)),
+            Some(_) => {}
+        }
+        self.place_tick(now);
+    }
+
+    /// Valide un changement de position resté stable pendant `place.debounce_s`.
+    fn place_tick(&mut self, now: f64) {
+        if let Some((p, since)) = self.place_cand {
+            if now - since >= self.cfg.place.debounce_s {
+                self.place = Some(p);
+                self.place_cand = None;
+                self.recenter();
+                self.apply_device_profile();
+            }
         }
     }
 
@@ -482,6 +492,7 @@ impl State {
 
     /// Fil de sortie, à cadence fixe : poses des jeux et UDP.
     pub fn tick_outputs(&mut self, now: f64) {
+        self.place_tick(now);
         if let Some((_, c)) = self.game_calib.as_mut() {
             c.tick(now);
         }
