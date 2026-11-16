@@ -239,11 +239,24 @@ pub fn load(p: &Path) -> Result<Config> {
 }
 
 /// Écriture atomique (fichier temporaire puis renommage).
+/// Arrondit tous les nombres décimaux à 9 décimales.
+fn round_floats(v: &mut toml::Value) {
+    match v {
+        toml::Value::Float(f) if f.is_finite() && f.abs() < 1e9 => *f = (*f * 1e9).round() / 1e9,
+        toml::Value::Array(a) => a.iter_mut().for_each(round_floats),
+        toml::Value::Table(t) => t.iter_mut().for_each(|(_, x)| round_floats(x)),
+        _ => {}
+    }
+}
+
 pub fn save(p: &Path, cfg: &Config) -> Result<()> {
     if let Some(d) = p.parent() {
         std::fs::create_dir_all(d)?;
     }
-    let text = toml::to_string_pretty(cfg)?;
+    // résidus de calcul des réglages par pas (1.2999999999999996 → 1.3)
+    let mut v = toml::Value::try_from(cfg)?;
+    round_floats(&mut v);
+    let text = toml::to_string_pretty(&v)?;
     let tmp = p.with_extension(format!("toml.tmp-{}", std::process::id()));
     std::fs::write(&tmp, text)?;
     std::fs::rename(&tmp, p)?;
@@ -260,4 +273,23 @@ pub fn update(p: &Path, f: impl FnOnce(&mut Config) -> Result<()>) -> Result<Con
 
 pub fn mtime(p: &Path) -> Option<std::time::SystemTime> {
     std::fs::metadata(p).and_then(|m| m.modified()).ok()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn save_rounds_floats_and_keeps_order() {
+        let dir = std::env::temp_dir().join(format!("podtrack-cfg-{}", std::process::id()));
+        let p = dir.join("config.toml");
+        let mut c = Config::default();
+        c.mouse.souris.curve_x = 0.7999999999999998;
+        save(&p, &c).unwrap();
+        let text = std::fs::read_to_string(&p).unwrap();
+        std::fs::remove_dir_all(&dir).ok();
+        assert!(text.contains("curve_x = 0.8\n"), "{text}");
+        assert!(text.starts_with("[bluetooth]"), "ordre des sections perdu");
+        assert!(text.find("[engine]").unwrap() < text.find("[tracker]").unwrap());
+    }
 }
