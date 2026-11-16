@@ -169,14 +169,6 @@ Rust, et lui doit l'essentiel de ce qui le fait marcher :
   [Henning Norden](https://github.com/henningnorden) : des DLL TrackIR et FreeTrack placées dans
   le préfixe du jeu, qui lisent la pose dans un fichier, sans programme dans Wine.
 
-Ce que podtrack a corrigé ou ajouté en chemin est proposé en retour à MousePods. starman-tech a
-fusionné les deux premières contributions le jour même et inscrit les AirPods Pro 3 dans sa liste
-d'écouteurs vérifiés :
-- correctifs de la calibration ([#19](https://github.com/starman-tech/mousepods/pull/19)) ;
-- tables TrackIR « Enhanced », qui rendent le suivi de tête à Star Citizen
-  ([#21](https://github.com/starman-tech/mousepods/pull/21)) ;
-- jeux hors Steam par leur préfixe Wine ([#22](https://github.com/starman-tech/mousepods/pull/22), proposée).
-
 Sous Windows, sur un autre bureau que GNOME, ou pour ses autres fonctions (souris par la tête, démo
 cockpit, parole silencieuse, montres Garmin), MousePods est le bon choix.
 
