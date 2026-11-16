@@ -143,9 +143,49 @@ implémentations donne les mêmes valeurs (écart maximal de l'ordre de 1e-13).
 
 ## Licence et remerciements
 
-Apache-2.0. podtrack dérive de MousePods (© Matteo Gaudioso, starman-tech), dont les travaux
-documentent l'accès aux capteurs des AirPods ; le pont TrackIR / FreeTrack dérive de la
-contribution de Henning Norden à MousePods, elle-même issue d'opentrack (ISC) et de
-linux-track (MIT). Détails dans `NOTICE`.
+podtrack est sous licence Apache-2.0. Les mentions exigées par les licences des projets dont il
+dérive sont dans `NOTICE`.
+
+### MousePods et starman-tech
+
+podtrack n'existerait pas sans [MousePods](https://github.com/starman-tech/mousepods), de
+Matteo Gaudioso ([starman-tech](https://github.com/starman-tech)). podtrack en est la réécriture en
+Rust, et lui doit l'essentiel de ce qui le fait marcher :
+
+- **l'accès aux capteurs des AirPods** sous Linux, sans appareil Apple : le canal AACP sur L2CAP,
+  la séquence qui ouvre le flux de mouvement, le format SensorDataWX des AirPods Pro, et la
+  première documentation publique du protocole RemoteHID des AirPods (3e génération). Ce travail
+  de rétro-ingénierie est publié dans la documentation de MousePods
+  ([RemoteHID](https://github.com/starman-tech/mousepods/blob/main/docs/REMOTEHID-PROTOCOL.md),
+  [capteurs des AirPods 3](https://github.com/starman-tech/mousepods/blob/main/docs/AIRPODS3-SENSORS.md),
+  [découvertes](https://github.com/starman-tech/mousepods/blob/main/docs/DISCOVERIES.md)), sous
+  licence CC BY 4.0 ;
+- **le traitement du mouvement** : estimation de la gravité et du biais du gyroscope, suivi de tête
+  par quaternion ou par gyroscope avec correction de dérive, filtres « One Euro », profils de
+  réponse par jeu, calibration des axes de l'écouteur et calibration par points à l'écran.
+  podtrack reprend ces algorithmes à l'identique : une capture réelle rejouée dans les deux
+  programmes donne les mêmes valeurs ;
+- **le pont pour les jeux Wine / Proton**, apporté à MousePods par
+  [Henning Norden](https://github.com/henningnorden) : des DLL TrackIR et FreeTrack placées dans
+  le préfixe du jeu, qui lisent la pose dans un fichier, sans programme dans Wine.
+
+Ce que podtrack a corrigé ou ajouté en chemin est proposé en retour à MousePods. starman-tech a
+fusionné les deux premières contributions le jour même et inscrit les AirPods Pro 3 dans sa liste
+d'écouteurs vérifiés :
+- correctifs de la calibration ([#19](https://github.com/starman-tech/mousepods/pull/19)) ;
+- tables TrackIR « Enhanced », qui rendent le suivi de tête à Star Citizen
+  ([#21](https://github.com/starman-tech/mousepods/pull/21)) ;
+- jeux hors Steam par leur préfixe Wine ([#22](https://github.com/starman-tech/mousepods/pull/22), proposée).
+
+Sous Windows, sur un autre bureau que GNOME, ou pour ses autres fonctions (souris par la tête, démo
+cockpit, parole silencieuse, montres Garmin), MousePods est le bon choix.
+
+### Autres projets
+
+- [opentrack](https://github.com/opentrack/opentrack) (Stanislaw Halik et contributeurs, ISC) : le
+  code NPClient d'origine, la liste des jeux TrackIR et leurs clés, et le décodage des tables
+  « Enhanced » ;
+- [linux-track](https://github.com/uglyDwarf/linuxtrack) (uglyDwarf, MIT), dont vient le NPClient
+  d'opentrack.
 
 AirPods est une marque d'Apple Inc. Ce projet n'est pas affilié à Apple.
