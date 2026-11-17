@@ -63,6 +63,10 @@ systemctl --user enable --now podtrack.service
 Le paquet installe `/usr/bin/podtrack`, le service utilisateur `podtrack.service`, l'entrée de
 bureau et l'icône.
 
+Le script fabrique d'abord un paquet source (`target/rpm/SRPMS/`, seul avec `--srpm`) qui
+contient les crates de `Cargo.lock` : il se reconstruit sans réseau, dans mock ou sur COPR.
+Prérequis : `rpm-build`, `cargo-vendor-filterer`, `gtk4-devel`, `libadwaita-devel`.
+
 ### Flatpak
 
 En préparation.
