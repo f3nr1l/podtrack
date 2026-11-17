@@ -54,6 +54,16 @@ avec une interface GNOME, des courbes de réponse par jeu et la gestion des jeux
 
 ### Paquet RPM (Fedora)
 
+Depuis le dépôt COPR (Fedora 44 et suivantes, x86_64 et aarch64), avec les mises à jour par `dnf` :
+
+```sh
+sudo dnf copr enable f3nr1l/podtrack
+sudo dnf install podtrack
+systemctl --user enable --now podtrack.service
+```
+
+Ou en construisant le paquet :
+
 ```sh
 packaging/rpm/build-rpm.sh          # ajouter --dll pour recompiler aussi les DLL Windows
 sudo dnf install ./target/rpm/RPMS/x86_64/podtrack-*.rpm
